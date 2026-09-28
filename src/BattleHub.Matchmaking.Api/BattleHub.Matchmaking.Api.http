@@ -1,0 +1,6 @@
+@BattleHub.Matchmaking.Api_HostAddress = http://localhost:5211
+
+GET {{BattleHub.Matchmaking.Api_HostAddress}}/health
+Accept: application/json
+
+###

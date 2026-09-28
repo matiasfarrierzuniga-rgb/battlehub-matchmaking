@@ -1,0 +1,24 @@
+# Build output
+bin/
+obj/
+
+# IDE and user settings
+.vs/
+.vscode/
+*.user
+*.suo
+
+# Test output
+TestResults/
+*.trx
+
+# Local environment and application settings
+.env
+.env.*
+!.env.example
+appsettings.Development.json
+appsettings.Local.json
+
+# Certificates and private keys
+*.pfx
+*.pem
