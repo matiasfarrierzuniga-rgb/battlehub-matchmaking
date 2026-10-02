@@ -188,8 +188,7 @@ public sealed class Match
     {
         if (Status != MatchStatus.Waiting)
         {
-            throw new InvalidOperationException(
-                $"Match membership cannot change while the match is {Status}.");
+            throw new MatchMembershipChangeNotAllowedException(Status);
         }
     }
 

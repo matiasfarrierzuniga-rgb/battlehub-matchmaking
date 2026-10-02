@@ -83,7 +83,9 @@ public class MatchMembershipTests
     {
         var match = CreateInStatus(status);
 
-        Assert.Throws<InvalidOperationException>(() => match.JoinParticipant("user-1", OccurredAt));
+        var error = Assert.Throws<MatchMembershipChangeNotAllowedException>(
+            () => match.JoinParticipant("user-1", OccurredAt));
+        Assert.Equal(status, error.CurrentStatus);
         Assert.Empty(match.Participants);
     }
 
@@ -137,7 +139,9 @@ public class MatchMembershipTests
     {
         var match = CreateInStatus(status);
 
-        Assert.Throws<InvalidOperationException>(() => match.LeaveParticipant("user-1", OccurredAt));
+        var error = Assert.Throws<MatchMembershipChangeNotAllowedException>(
+            () => match.LeaveParticipant("user-1", OccurredAt));
+        Assert.Equal(status, error.CurrentStatus);
     }
 
     [Fact]
