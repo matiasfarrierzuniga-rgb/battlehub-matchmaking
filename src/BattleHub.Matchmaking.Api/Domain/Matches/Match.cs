@@ -55,6 +55,45 @@ public sealed class Match
 
     public int CurrentPlayers => _participants.Count;
 
+    public bool JoinParticipant(string userId, DateTimeOffset occurredAt)
+    {
+        EnsureMembershipCanChange();
+        ArgumentException.ThrowIfNullOrWhiteSpace(userId);
+
+        if (_participants.Any(participant =>
+                string.Equals(participant.UserId, userId, StringComparison.Ordinal)))
+        {
+            return false;
+        }
+
+        if (CurrentPlayers >= MaxPlayers)
+        {
+            throw new MatchFullException(Id, MaxPlayers);
+        }
+
+        _participants.Add(new MatchParticipant(userId, occurredAt, occurredAt));
+        UpdateLastActivity(occurredAt);
+        return true;
+    }
+
+    public bool LeaveParticipant(string userId, DateTimeOffset occurredAt)
+    {
+        EnsureMembershipCanChange();
+        ArgumentException.ThrowIfNullOrWhiteSpace(userId);
+
+        var participant = _participants.Find(candidate =>
+            string.Equals(candidate.UserId, userId, StringComparison.Ordinal));
+
+        if (participant is null)
+        {
+            return false;
+        }
+
+        _participants.Remove(participant);
+        UpdateLastActivity(occurredAt);
+        return true;
+    }
+
     public void RequestStart(string actorId, DateTimeOffset occurredAt)
     {
         EnsureOwner(actorId);
@@ -101,6 +140,15 @@ public sealed class Match
         }
     }
 
+    private void EnsureMembershipCanChange()
+    {
+        if (Status != MatchStatus.Waiting)
+        {
+            throw new InvalidOperationException(
+                $"Match membership cannot change while the match is {Status}.");
+        }
+    }
+
     private void Transition(MatchStatus expectedStatus, MatchStatus targetStatus, DateTimeOffset occurredAt)
     {
         if (Status != expectedStatus)
@@ -114,6 +162,14 @@ public sealed class Match
     private void ApplyTransition(MatchStatus targetStatus, DateTimeOffset occurredAt)
     {
         Status = targetStatus;
-        LastActivityAt = occurredAt;
+        UpdateLastActivity(occurredAt);
+    }
+
+    private void UpdateLastActivity(DateTimeOffset occurredAt)
+    {
+        if (occurredAt > LastActivityAt)
+        {
+            LastActivityAt = occurredAt;
+        }
     }
 }
