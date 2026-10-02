@@ -55,6 +55,50 @@ public sealed class Match
 
     public int CurrentPlayers => _participants.Count;
 
+    public static Match Rehydrate(
+        string id,
+        string title,
+        string gameType,
+        string createdBy,
+        DateTimeOffset createdAt,
+        DateTimeOffset lastActivityAt,
+        int maxPlayers,
+        MatchStatus status,
+        IEnumerable<MatchParticipant> participants)
+    {
+        ArgumentNullException.ThrowIfNull(participants);
+
+        if (!Enum.IsDefined(status))
+        {
+            throw new ArgumentOutOfRangeException(nameof(status));
+        }
+
+        var match = new Match(id, title, gameType, createdBy, createdAt, maxPlayers);
+        var participantList = participants.ToList();
+
+        if (participantList.Count > maxPlayers)
+        {
+            throw new ArgumentException("Participants cannot exceed max players.", nameof(participants));
+        }
+
+        if (participantList.Any(participant => participant is null))
+        {
+            throw new ArgumentException("Participants cannot contain null values.", nameof(participants));
+        }
+
+        if (participantList
+            .GroupBy(participant => participant.UserId, StringComparer.Ordinal)
+            .Any(group => group.Count() > 1))
+        {
+            throw new ArgumentException("Participant user IDs must be unique.", nameof(participants));
+        }
+
+        match.LastActivityAt = lastActivityAt;
+        match.Status = status;
+        match._participants.AddRange(participantList);
+        return match;
+    }
+
     public bool JoinParticipant(string userId, DateTimeOffset occurredAt)
     {
         EnsureMembershipCanChange();
