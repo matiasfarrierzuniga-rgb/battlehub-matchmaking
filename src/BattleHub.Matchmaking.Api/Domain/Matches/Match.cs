@@ -138,6 +138,24 @@ public sealed class Match
         return true;
     }
 
+    public bool RecordHeartbeat(string userId, DateTimeOffset occurredAt)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(userId);
+
+        var participant = _participants.Find(candidate =>
+            string.Equals(candidate.UserId, userId, StringComparison.Ordinal));
+
+        if (participant is null)
+        {
+            throw new MatchParticipantNotFoundException(userId);
+        }
+
+        var participantChanged = participant.RecordHeartbeat(occurredAt);
+        var activityChanged = occurredAt > LastActivityAt;
+        UpdateLastActivity(occurredAt);
+        return participantChanged || activityChanged;
+    }
+
     public void RequestStart(string actorId, DateTimeOffset occurredAt)
     {
         EnsureOwner(actorId);

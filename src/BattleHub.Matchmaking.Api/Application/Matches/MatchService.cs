@@ -55,6 +55,36 @@ public sealed class MatchService(IMatchStore store, IMatchEventPublisher eventPu
     public Task<Match> LeaveAsync(string matchId, string userId, CancellationToken cancellationToken) =>
         UpdateMembershipAsync(matchId, userId, join: false, cancellationToken);
 
+    public async Task<Match> HeartbeatAsync(
+        string matchId,
+        string userId,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(matchId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(userId);
+
+        for (var attempt = 0; attempt < MaxConcurrencyAttempts; attempt++)
+        {
+            var stored = await GetStoredAsync(matchId, cancellationToken);
+            var match = stored.Match;
+            var expectedStatus = match.Status;
+            var databaseNow = await store.GetDatabaseTimeAsync(cancellationToken);
+
+            if (!match.RecordHeartbeat(userId, databaseNow))
+            {
+                return match;
+            }
+
+            if (await store.TryReplaceAsync(
+                    match, stored.Revision, expectedStatus, cancellationToken))
+            {
+                return match;
+            }
+        }
+
+        throw new MatchConcurrencyException(matchId);
+    }
+
     public async Task<Match> StartAsync(
         string matchId,
         string actorId,

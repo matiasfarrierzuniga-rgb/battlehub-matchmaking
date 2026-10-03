@@ -4,11 +4,11 @@ using Microsoft.AspNetCore.SignalR;
 
 namespace BattleHub.Matchmaking.Tests.Support;
 
-internal sealed class TestHubCallerContext(string connectionId) : HubCallerContext
+internal sealed class TestHubCallerContext(string connectionId, ClaimsPrincipal? user = null) : HubCallerContext
 {
     public override string ConnectionId { get; } = connectionId;
     public override string? UserIdentifier => null;
-    public override ClaimsPrincipal? User => null;
+    public override ClaimsPrincipal? User { get; } = user;
     public override IDictionary<object, object?> Items { get; } = new Dictionary<object, object?>();
     public override IFeatureCollection Features { get; } = new FeatureCollection();
     public override CancellationToken ConnectionAborted => CancellationToken.None;
@@ -53,12 +53,14 @@ internal sealed class RecordingClientProxy : IClientProxy
     }
 }
 
-internal sealed class RecordingHubClients : IHubClients
+internal sealed class RecordingHubClients : IHubClients, IHubCallerClients
 {
     public RecordingClientProxy Proxy { get; } = new();
     public List<IReadOnlyList<string>> SelectedGroups { get; } = [];
 
     public IClientProxy All => Proxy;
+    public IClientProxy Caller => Proxy;
+    public IClientProxy Others => Proxy;
     public IClientProxy AllExcept(IReadOnlyList<string> excludedConnectionIds) => Proxy;
     public IClientProxy Client(string connectionId) => Proxy;
     public IClientProxy Clients(IReadOnlyList<string> connectionIds) => Proxy;
@@ -70,6 +72,7 @@ internal sealed class RecordingHubClients : IHubClients
     }
 
     public IClientProxy GroupExcept(string groupName, IReadOnlyList<string> excludedConnectionIds) => Proxy;
+    public IClientProxy OthersInGroup(string groupName) => Proxy;
 
     public IClientProxy Groups(IReadOnlyList<string> groupNames)
     {

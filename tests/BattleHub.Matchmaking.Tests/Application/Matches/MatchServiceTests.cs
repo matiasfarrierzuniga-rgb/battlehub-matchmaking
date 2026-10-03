@@ -248,6 +248,130 @@ public class MatchServiceTests
 
     [Fact]
     [Trait("Category", "Unit")]
+    public async Task Heartbeat_UsesDatabaseTimePersistsAndDoesNotPublish()
+    {
+        var match = CreateMatch();
+        match.JoinParticipant("user-1", CreatedAt);
+        var (service, store, publisher) = CreateService();
+        store.Set(match);
+
+        var result = await service.HeartbeatAsync(MatchId, "user-1", default);
+
+        Assert.Equal(1, store.DatabaseTimeCalls);
+        Assert.Equal(1, store.ReplaceCalls);
+        Assert.Equal(DatabaseNow, Assert.Single(result.Participants).LastHeartbeatAt);
+        Assert.Equal(DatabaseNow, result.LastActivityAt);
+        Assert.Empty(publisher.Events);
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public async Task Heartbeat_WhenMatchMissing_Throws()
+    {
+        var (service, store, publisher) = CreateService();
+
+        await Assert.ThrowsAsync<MatchNotFoundException>(
+            () => service.HeartbeatAsync(MatchId, "user-1", default));
+
+        Assert.Equal(0, store.ReplaceCalls);
+        Assert.Empty(publisher.Events);
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public async Task Heartbeat_WhenParticipantMissing_DoesNotReplaceOrPublish()
+    {
+        var (service, store, publisher) = CreateService();
+        store.Set(CreateMatch());
+
+        await Assert.ThrowsAsync<MatchParticipantNotFoundException>(
+            () => service.HeartbeatAsync(MatchId, "user-1", default));
+
+        Assert.Equal(0, store.ReplaceCalls);
+        Assert.Empty(publisher.Events);
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public async Task Heartbeat_WithOlderDatabaseTime_IsIdempotentWithoutReplace()
+    {
+        var match = CreateMatch();
+        match.JoinParticipant("user-1", DatabaseNow.AddMinutes(1));
+        var (service, store, publisher) = CreateService();
+        store.Set(match);
+
+        var result = await service.HeartbeatAsync(MatchId, "user-1", default);
+
+        Assert.Equal(DatabaseNow.AddMinutes(1), Assert.Single(result.Participants).LastHeartbeatAt);
+        Assert.Equal(0, store.ReplaceCalls);
+        Assert.Empty(publisher.Events);
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public async Task Heartbeat_AfterConflict_RereadsAndSucceeds()
+    {
+        var match = CreateMatch();
+        match.JoinParticipant("user-1", CreatedAt);
+        var (service, store, publisher) = CreateService();
+        store.Set(match);
+        store.ReplaceResults.Enqueue(false);
+        store.ReplaceResults.Enqueue(true);
+
+        var result = await service.HeartbeatAsync(MatchId, "user-1", default);
+
+        Assert.Equal(2, store.GetCalls);
+        Assert.Equal(2, store.ReplaceCalls);
+        Assert.Equal(DatabaseNow, Assert.Single(result.Participants).LastHeartbeatAt);
+        Assert.Empty(publisher.Events);
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public async Task Heartbeat_AfterFiveConflicts_ThrowsWithoutPublishing()
+    {
+        var match = CreateMatch();
+        match.JoinParticipant("user-1", CreatedAt);
+        var (service, store, publisher) = CreateService();
+        store.Set(match);
+        EnqueueConflicts(store);
+
+        await Assert.ThrowsAsync<MatchConcurrencyException>(
+            () => service.HeartbeatAsync(MatchId, "user-1", default));
+
+        Assert.Equal(5, store.ReplaceCalls);
+        Assert.Empty(publisher.Events);
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public async Task Heartbeat_WhenConflictStoredNewerHeartbeat_CompletesWithoutAnotherReplace()
+    {
+        var match = CreateMatch();
+        match.JoinParticipant("user-1", CreatedAt);
+        var (service, store, publisher) = CreateService();
+        store.Set(match, revision: 4);
+        store.ReplaceResults.Enqueue(false);
+        store.AfterReplace = (fake, call, succeeded) =>
+        {
+            if (call == 1 && !succeeded)
+            {
+                var competing = fake.ReadCurrent(MatchId);
+                competing.RecordHeartbeat("user-1", DatabaseNow.AddMinutes(1));
+                fake.Set(competing, revision: 5);
+            }
+        };
+
+        var result = await service.HeartbeatAsync(MatchId, "user-1", default);
+
+        Assert.Equal(2, store.GetCalls);
+        Assert.Equal(1, store.ReplaceCalls);
+        Assert.Equal(DatabaseNow.AddMinutes(1), Assert.Single(result.Participants).LastHeartbeatAt);
+        Assert.Empty(publisher.Events);
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
     public async Task Start_ByOwner_PersistsBothTransitionsAndPublishesInOrder()
     {
         var trace = new List<string>();
@@ -400,16 +524,24 @@ public class MatchServiceTests
         public List<Match> Inserts { get; } = [];
         public List<Match> Replacements { get; } = [];
         public bool ThrowOnInsert { get; init; }
+        public int DatabaseTimeCalls { get; private set; }
+        public int GetCalls { get; private set; }
         public int ReplaceCalls { get; private set; }
         public Action<FakeMatchStore, int, bool>? AfterReplace { get; set; }
 
-        public Task<DateTimeOffset> GetDatabaseTimeAsync(CancellationToken cancellationToken) =>
-            Task.FromResult(databaseNow);
+        public Task<DateTimeOffset> GetDatabaseTimeAsync(CancellationToken cancellationToken)
+        {
+            DatabaseTimeCalls++;
+            return Task.FromResult(databaseNow);
+        }
 
-        public Task<StoredMatch?> GetAsync(string matchId, CancellationToken cancellationToken) =>
-            Task.FromResult(_matches.TryGetValue(matchId, out var stored)
+        public Task<StoredMatch?> GetAsync(string matchId, CancellationToken cancellationToken)
+        {
+            GetCalls++;
+            return Task.FromResult(_matches.TryGetValue(matchId, out var stored)
                 ? new StoredMatch(Clone(stored.Match), stored.Revision)
                 : null);
+        }
 
         public Task<IReadOnlyList<StoredMatch>> ListAsync(CancellationToken cancellationToken) =>
             Task.FromResult<IReadOnlyList<StoredMatch>>(

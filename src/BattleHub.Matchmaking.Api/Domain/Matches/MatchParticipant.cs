@@ -15,5 +15,16 @@ public sealed class MatchParticipant
 
     public DateTimeOffset JoinedAt { get; }
 
-    public DateTimeOffset LastHeartbeatAt { get; }
+    public DateTimeOffset LastHeartbeatAt { get; private set; }
+
+    internal bool RecordHeartbeat(DateTimeOffset occurredAt)
+    {
+        if (occurredAt <= LastHeartbeatAt)
+        {
+            return false;
+        }
+
+        LastHeartbeatAt = occurredAt;
+        return true;
+    }
 }
