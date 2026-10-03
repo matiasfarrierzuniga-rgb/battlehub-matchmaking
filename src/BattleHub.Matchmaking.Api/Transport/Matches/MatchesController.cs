@@ -2,6 +2,7 @@ using System.Security.Claims;
 using BattleHub.Matchmaking.Api.Application.Matches;
 using BattleHub.Matchmaking.Api.Domain.Matches;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Authorization;
 
 namespace BattleHub.Matchmaking.Api.Transport.Matches;
 
@@ -10,6 +11,7 @@ namespace BattleHub.Matchmaking.Api.Transport.Matches;
 public sealed class MatchesController(MatchService matchService) : ControllerBase
 {
     [HttpPost]
+    [Authorize]
     public async Task<ActionResult<MatchResponse>> Create(
         CreateMatchRequest request,
         CancellationToken cancellationToken)
@@ -60,18 +62,22 @@ public sealed class MatchesController(MatchService matchService) : ControllerBas
         Ok((await matchService.GetAsync(matchId, cancellationToken)).ToResponse());
 
     [HttpPost("{matchId}/join")]
+    [Authorize]
     public async Task<ActionResult<MatchResponse>> Join(string matchId, CancellationToken cancellationToken) =>
         await ExecuteForUser((userId, ct) => matchService.JoinAsync(matchId, userId, ct), cancellationToken);
 
     [HttpPost("{matchId}/leave")]
+    [Authorize]
     public async Task<ActionResult<MatchResponse>> Leave(string matchId, CancellationToken cancellationToken) =>
         await ExecuteForUser((userId, ct) => matchService.LeaveAsync(matchId, userId, ct), cancellationToken);
 
     [HttpPost("{matchId}/start")]
+    [Authorize]
     public async Task<ActionResult<MatchResponse>> Start(string matchId, CancellationToken cancellationToken) =>
         await ExecuteForUser((userId, ct) => matchService.StartAsync(matchId, userId, ct), cancellationToken);
 
     [HttpDelete("{matchId}")]
+    [Authorize]
     public async Task<ActionResult<MatchResponse>> Delete(string matchId, CancellationToken cancellationToken) =>
         await ExecuteForUser((userId, ct) => matchService.CancelAsync(matchId, userId, ct), cancellationToken);
 

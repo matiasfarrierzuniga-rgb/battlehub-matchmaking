@@ -3,11 +3,30 @@ using BattleHub.Matchmaking.Api.Application.Matches;
 using BattleHub.Matchmaking.Api.Domain.Matches;
 using BattleHub.Matchmaking.Api.Transport.Lobby;
 using BattleHub.Matchmaking.Tests.Support;
+using Microsoft.AspNetCore.Authorization;
 
 namespace BattleHub.Matchmaking.Tests.Transport.Lobby;
 
 public class LobbyHubTests
 {
+    [Fact]
+    [Trait("Category", "Unit")]
+    public void OnlyHeartbeat_RequiresAuthorization()
+    {
+        var publicMethods = new[]
+        {
+            nameof(LobbyHub.JoinLobby),
+            nameof(LobbyHub.JoinMatch),
+            nameof(LobbyHub.LeaveMatch)
+        };
+
+        Assert.NotNull(typeof(LobbyHub).GetMethod(nameof(LobbyHub.Heartbeat))!
+            .GetCustomAttributes(typeof(AuthorizeAttribute), inherit: true).SingleOrDefault());
+        Assert.All(publicMethods, method => Assert.Empty(typeof(LobbyHub).GetMethod(method)!
+            .GetCustomAttributes(typeof(AuthorizeAttribute), inherit: true)));
+        Assert.Empty(typeof(LobbyHub).GetCustomAttributes(typeof(AuthorizeAttribute), inherit: true));
+    }
+
     [Fact]
     [Trait("Category", "Unit")]
     public async Task JoinLobby_AddsConnectionToLobbyGroup()

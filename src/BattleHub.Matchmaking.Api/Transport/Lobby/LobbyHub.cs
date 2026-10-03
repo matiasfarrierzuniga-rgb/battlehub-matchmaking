@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using BattleHub.Matchmaking.Api.Application.Matches;
 using Microsoft.AspNetCore.SignalR;
+using Microsoft.AspNetCore.Authorization;
 
 namespace BattleHub.Matchmaking.Api.Transport.Lobby;
 
@@ -21,6 +22,7 @@ public sealed class LobbyHub(MatchService matchService) : Hub
         return Groups.RemoveFromGroupAsync(Context.ConnectionId, LobbyGroups.ForMatch(matchId));
     }
 
+    [Authorize]
     public async Task Heartbeat(string matchId)
     {
         var userId = Context.User?.FindFirstValue(ClaimTypes.NameIdentifier)

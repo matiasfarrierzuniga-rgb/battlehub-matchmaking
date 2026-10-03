@@ -1,9 +1,11 @@
 using BattleHub.Matchmaking.Api.Application.Matches;
+using BattleHub.Matchmaking.Api.Configuration;
 using BattleHub.Matchmaking.Api.Infrastructure.MongoDb;
 using BattleHub.Matchmaking.Api.Infrastructure.MongoDb.Matches;
 using BattleHub.Matchmaking.Api.Transport;
 using BattleHub.Matchmaking.Api.Transport.Lobby;
 using Microsoft.Extensions.Options;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using MongoDB.Driver;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -15,6 +17,22 @@ builder.Services.AddControllers();
 builder.Services.AddSignalR();
 builder.Services.AddProblemDetails();
 builder.Services.AddExceptionHandler<MatchExceptionHandler>();
+
+builder.Services
+    .AddOptions<Auth0Options>()
+    .Bind(builder.Configuration.GetSection(Auth0Options.SectionName))
+    .Validate(static options => !string.IsNullOrWhiteSpace(options.Domain), "Auth0:Domain is required.")
+    .Validate(static options => !string.IsNullOrWhiteSpace(options.Audience), "Auth0:Audience is required.")
+    .ValidateOnStart();
+
+var auth0Options = builder.Configuration
+    .GetSection(Auth0Options.SectionName)
+    .Get<Auth0Options>() ?? new Auth0Options();
+
+builder.Services
+    .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options => Auth0Authentication.Configure(options, auth0Options));
+builder.Services.AddAuthorization();
 
 builder.Services
     .AddOptions<MongoDbOptions>()
@@ -48,6 +66,9 @@ builder.Services.AddSingleton<MatchService>();
 var app = builder.Build();
 
 app.UseExceptionHandler();
+
+app.UseAuthentication();
+app.UseAuthorization();
 
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
