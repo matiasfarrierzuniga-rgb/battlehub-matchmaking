@@ -1,4 +1,5 @@
 using BattleHub.Matchmaking.Api.Application.Matches;
+using BattleHub.Matchmaking.Api.Application.Matches.Cleanup;
 using BattleHub.Matchmaking.Api.Configuration;
 using BattleHub.Matchmaking.Api.Infrastructure.MongoDb;
 using BattleHub.Matchmaking.Api.Infrastructure.MongoDb.Matches;
@@ -79,6 +80,7 @@ builder.Services.AddSingleton<IMongoDatabase>(serviceProvider =>
 
 builder.Services.AddSingleton<MatchmakingMongoContext>();
 builder.Services.AddSingleton<IMatchStore, MongoMatchStore>();
+builder.Services.AddSingleton<IMatchCleanupStore, MongoMatchCleanupStore>();
 builder.Services.AddSingleton<IMatchEventPublisher, SignalRMatchEventPublisher>();
 builder.Services.AddSingleton<MatchService>();
 builder.Services.AddSingleton<FinishMatchService>();
