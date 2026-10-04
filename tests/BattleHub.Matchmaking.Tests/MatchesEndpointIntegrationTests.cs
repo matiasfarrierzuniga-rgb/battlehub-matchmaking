@@ -134,6 +134,63 @@ public class MatchesEndpointIntegrationTests : IClassFixture<MatchesEndpointInte
 
     [Fact]
     [Trait("Category", "Integration")]
+    public async Task Finish_WithoutPrincipal_ReturnsUnauthorized()
+    {
+        using var response = await _client.PostAsync("/api/matches/typing-started/finish", null);
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
+    [Trait("Category", "Integration")]
+    public async Task Finish_WithNormalUser_ReturnsForbidden()
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/api/matches/typing-started/finish");
+        request.Headers.Add(TestAuthHandler.SubHeader, "user-1");
+
+        using var response = await _client.SendAsync(request);
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    [Trait("Category", "Integration")]
+    public async Task Finish_WithMachineMissingPermission_ReturnsForbidden()
+    {
+        using var response = await SendAsMachine("/api/matches/typing-started/finish", "matches.create");
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    [Trait("Category", "Integration")]
+    public async Task Finish_WithAuthorizedMachine_IsIdempotent()
+    {
+        using var first = await SendAsMachine("/api/matches/typing-started/finish", "matches.finish");
+        using var second = await SendAsMachine("/api/matches/typing-started/finish", "matches.finish");
+
+        Assert.Equal(HttpStatusCode.NoContent, first.StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, second.StatusCode);
+    }
+
+    [Fact]
+    [Trait("Category", "Integration")]
+    public async Task Finish_WithMachineForDifferentGame_ReturnsForbidden()
+    {
+        using var response = await SendAsMachine("/api/matches/trivia-started/finish", "matches.finish");
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    [Trait("Category", "Integration")]
+    public async Task ValidFinishMachine_CannotCreateUserMatch()
+    {
+        using var request = MachineRequest(HttpMethod.Post, "/api/matches", "matches.finish");
+        request.Content = JsonContent.Create(new { title = "Forbidden", gameType = "typing", maxPlayers = 4 });
+
+        using var response = await _client.SendAsync(request);
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    [Trait("Category", "Integration")]
     public async Task AuthenticatedActors_AreUsedForJoinStartAndCancel()
     {
         var created = await CreateAuthenticatedMatch("owner-user", "Actor operations");
@@ -177,6 +234,19 @@ public class MatchesEndpointIntegrationTests : IClassFixture<MatchesEndpointInte
         return (await response.Content.ReadFromJsonAsync<MatchResponse>())!;
     }
 
+    private async Task<HttpResponseMessage> SendAsMachine(string path, string scope) =>
+        await _client.SendAsync(MachineRequest(HttpMethod.Post, path, scope));
+
+    private static HttpRequestMessage MachineRequest(HttpMethod method, string path, string scope)
+    {
+        var request = new HttpRequestMessage(method, path);
+        request.Headers.Add(TestAuthHandler.SubHeader, "typing-client@clients");
+        request.Headers.Add(TestAuthHandler.GtyHeader, "client-credentials");
+        request.Headers.Add(TestAuthHandler.AzpHeader, "typing-client");
+        request.Headers.Add(TestAuthHandler.ScopeHeader, scope);
+        return request;
+    }
+
     public sealed class Factory : WebApplicationFactory<Program>
     {
         protected override void ConfigureWebHost(IWebHostBuilder builder)
@@ -186,7 +256,8 @@ public class MatchesEndpointIntegrationTests : IClassFixture<MatchesEndpointInte
                 new Dictionary<string, string?>
                 {
                     ["Auth0:Domain"] = "test.auth0.invalid",
-                    ["Auth0:Audience"] = "test-matchmaking-api"
+                    ["Auth0:Audience"] = "test-matchmaking-api",
+                    ["GameServices:Clients:typing-client"] = "typing"
                 }));
 
             builder.ConfigureTestServices(services =>
@@ -202,8 +273,18 @@ public class MatchesEndpointIntegrationTests : IClassFixture<MatchesEndpointInte
                 var store = new TestMatchStore();
                 var createdAt = new DateTimeOffset(2026, 10, 2, 12, 0, 0, TimeSpan.FromHours(-6));
                 store.Add(new Match("match-1", "Friday", "Trivia", "owner-1", createdAt, 4));
+                store.Add(StartedMatch("typing-started", "typing", createdAt));
+                store.Add(StartedMatch("trivia-started", "trivia", createdAt));
                 services.AddSingleton<IMatchStore>(store);
             });
+        }
+
+        private static Match StartedMatch(string id, string gameType, DateTimeOffset createdAt)
+        {
+            var match = new Match(id, "Started", gameType, "owner-1", createdAt, 4);
+            match.RequestStart("owner-1", createdAt.AddMinutes(1));
+            match.CompleteStart(createdAt.AddMinutes(2));
+            return match;
         }
     }
 }

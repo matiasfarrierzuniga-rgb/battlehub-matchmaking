@@ -30,6 +30,7 @@ public class Auth0AuthenticationTests
         });
 
         Assert.Equal("matchmaking-api", jwt.Audience);
+        Assert.False(jwt.MapInboundClaims);
         Assert.True(jwt.TokenValidationParameters.ValidateIssuer);
         Assert.True(jwt.TokenValidationParameters.ValidateAudience);
         Assert.True(jwt.TokenValidationParameters.ValidateLifetime);

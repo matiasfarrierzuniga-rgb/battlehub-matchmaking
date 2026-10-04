@@ -14,6 +14,7 @@ public class SignalRMatchEventPublisherTests
         MatchEventNames.PlayerLeft,
         MatchEventNames.MatchStarting,
         MatchEventNames.MatchStarted,
+        MatchEventNames.MatchFinished,
         MatchEventNames.MatchDeleted
     };
 

@@ -14,6 +14,7 @@ public sealed class SignalRMatchEventPublisher(IHubContext<LobbyHub> hubContext)
         MatchEventNames.PlayerLeft,
         MatchEventNames.MatchStarting,
         MatchEventNames.MatchStarted,
+        MatchEventNames.MatchFinished,
         MatchEventNames.MatchDeleted
     ];
 

@@ -15,12 +15,18 @@ internal sealed class TestAuthHandler(
     public const string AuthenticationScheme = "TestAuth";
     public const string NameIdentifierHeader = "X-Test-NameIdentifier";
     public const string SubHeader = "X-Test-Sub";
+    public const string GtyHeader = "X-Test-Gty";
+    public const string AzpHeader = "X-Test-Azp";
+    public const string ScopeHeader = "X-Test-Scope";
 
     protected override Task<AuthenticateResult> HandleAuthenticateAsync()
     {
         var claims = new List<Claim>();
         AddClaim(NameIdentifierHeader, ClaimTypes.NameIdentifier, claims);
         AddClaim(SubHeader, "sub", claims);
+        AddClaim(GtyHeader, "gty", claims);
+        AddClaim(AzpHeader, "azp", claims);
+        AddClaim(ScopeHeader, "scope", claims);
 
         if (claims.Count == 0)
         {

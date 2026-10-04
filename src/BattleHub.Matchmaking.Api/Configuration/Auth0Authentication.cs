@@ -28,6 +28,7 @@ public static class Auth0Authentication
 
     public static void Configure(JwtBearerOptions jwtOptions, Auth0Options auth0Options)
     {
+        jwtOptions.MapInboundClaims = false;
         jwtOptions.Authority = NormalizeAuthority(auth0Options.Domain);
         jwtOptions.Audience = auth0Options.Audience;
         jwtOptions.TokenValidationParameters.ValidateIssuer = true;

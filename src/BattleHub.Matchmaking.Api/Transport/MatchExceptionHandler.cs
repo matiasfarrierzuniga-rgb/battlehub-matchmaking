@@ -3,6 +3,7 @@ using BattleHub.Matchmaking.Api.Domain.Matches;
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.WebUtilities;
+using MongoDB.Driver;
 
 namespace BattleHub.Matchmaking.Api.Transport;
 
@@ -22,6 +23,7 @@ public sealed class MatchExceptionHandler(IProblemDetailsService problemDetailsS
             MatchMembershipChangeNotAllowedException => StatusCodes.Status409Conflict,
             UnauthorizedAccessException => StatusCodes.Status403Forbidden,
             ArgumentException => StatusCodes.Status400BadRequest,
+            MongoException => StatusCodes.Status503ServiceUnavailable,
             _ => 0
         };
 
@@ -39,7 +41,9 @@ public sealed class MatchExceptionHandler(IProblemDetailsService problemDetailsS
             {
                 Status = statusCode,
                 Title = ReasonPhrases.GetReasonPhrase(statusCode),
-                Detail = exception.Message
+                Detail = exception is MongoException
+                    ? "MongoDB no está disponible."
+                    : exception.Message
             }
         });
     }

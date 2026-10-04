@@ -7,5 +7,6 @@ public static class MatchEventNames
     public const string PlayerLeft = nameof(PlayerLeft);
     public const string MatchStarting = nameof(MatchStarting);
     public const string MatchStarted = nameof(MatchStarted);
+    public const string MatchFinished = nameof(MatchFinished);
     public const string MatchDeleted = nameof(MatchDeleted);
 }

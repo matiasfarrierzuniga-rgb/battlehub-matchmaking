@@ -32,7 +32,26 @@ var auth0Options = builder.Configuration
 builder.Services
     .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options => Auth0Authentication.Configure(options, auth0Options));
-builder.Services.AddAuthorization();
+builder.Services.AddAuthorization(options =>
+{
+    options.AddPolicy(MatchAuthorization.UserPolicy, policy =>
+        policy.RequireAssertion(context => MatchAuthorization.IsUser(context.User)));
+    options.AddPolicy(MatchAuthorization.FinishPolicy, policy =>
+        policy.RequireAssertion(context => MatchAuthorization.CanFinish(context.User)));
+});
+
+builder.Services
+    .AddOptions<GameServiceOptions>()
+    .Bind(builder.Configuration.GetSection(GameServiceOptions.SectionName));
+builder.Services
+    .AddOptions<CleanupOptions>()
+    .Bind(builder.Configuration.GetSection(CleanupOptions.SectionName))
+    .Validate(static options => options.IntervalSeconds > 0, "Cleanup:IntervalSeconds must be greater than zero.")
+    .Validate(static options => options.HeartbeatTimeoutSeconds > 0, "Cleanup:HeartbeatTimeoutSeconds must be greater than zero.")
+    .Validate(static options => options.InactivitySeconds > 0, "Cleanup:InactivitySeconds must be greater than zero.")
+    .Validate(static options => options.ExpirationSeconds > 0, "Cleanup:ExpirationSeconds must be greater than zero.")
+    .Validate(static options => options.RetentionSeconds > 0, "Cleanup:RetentionSeconds must be greater than zero.")
+    .ValidateOnStart();
 
 builder.Services
     .AddOptions<MongoDbOptions>()
@@ -62,6 +81,7 @@ builder.Services.AddSingleton<MatchmakingMongoContext>();
 builder.Services.AddSingleton<IMatchStore, MongoMatchStore>();
 builder.Services.AddSingleton<IMatchEventPublisher, SignalRMatchEventPublisher>();
 builder.Services.AddSingleton<MatchService>();
+builder.Services.AddSingleton<FinishMatchService>();
 
 var app = builder.Build();
 
