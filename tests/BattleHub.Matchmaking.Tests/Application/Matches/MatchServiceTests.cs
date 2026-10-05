@@ -512,6 +512,89 @@ public class MatchServiceTests
         Assert.Single(publisher.Events);
     }
 
+    [Theory]
+    [InlineData("typing", 4, 4)]
+    [InlineData("Typing", 8, 8)]
+    [InlineData("trivia", 4, 4)]
+    [InlineData("Trivia", 6, 6)]
+    [InlineData("memory", 2, 2)]
+    [InlineData("memory", 3, 2)]
+    [InlineData("Memory", 4, 2)]
+    [InlineData("MEMORY", 10, 2)]
+    [InlineData("Chess", 4, 4)]
+    [Trait("Category", "Unit")]
+    public async Task Create_CapsOnlyMemoryCapacity(string gameType, int requestedMaxPlayers, int expectedMaxPlayers)
+    {
+        var (service, _, _) = CreateService();
+
+        var match = await service.CreateAsync(
+            new CreateMatchCommand("Friday match", gameType, requestedMaxPlayers),
+            OwnerId,
+            default);
+
+        Assert.Equal(expectedMaxPlayers, match.MaxPlayers);
+        Assert.Equal(1, match.CurrentPlayers);
+        Assert.Equal(OwnerId, Assert.Single(match.Participants).UserId);
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public async Task Memory_AcceptsSecondPlayerAndRejectsThird()
+    {
+        var (service, store, publisher) = CreateService();
+        var created = await service.CreateAsync(
+            new CreateMatchCommand("Friday match", "memory", 10),
+            OwnerId,
+            default);
+
+        var joined = await service.JoinAsync(created.Id, "user-2", default);
+
+        Assert.Equal(2, joined.MaxPlayers);
+        Assert.Equal(2, joined.CurrentPlayers);
+        var error = await Assert.ThrowsAsync<MatchFullException>(
+            () => service.JoinAsync(created.Id, "user-3", default));
+
+        Assert.Equal(2, error.MaxPlayers);
+        Assert.Contains("is full", error.Message, StringComparison.OrdinalIgnoreCase);
+        var stored = store.ReadCurrent(created.Id);
+        Assert.Equal(2, stored.CurrentPlayers);
+        Assert.DoesNotContain(stored.Participants, participant => participant.UserId == "user-3");
+        Assert.Equal(2, publisher.Events.Count);
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public async Task Memory_LostRaceForLastSlot_DoesNotExceedTwoPlayers()
+    {
+        var (service, store, publisher) = CreateService();
+        var match = new Match(MatchId, "Friday match", "memory", OwnerId, CreatedAt, 10);
+        match.JoinParticipant(OwnerId, CreatedAt);
+        store.Set(match);
+        store.ReplaceResults.Enqueue(false);
+        store.AfterReplace = (current, calls, _) =>
+        {
+            if (calls != 1)
+            {
+                return;
+            }
+
+            var filled = current.ReadCurrent(MatchId);
+            filled.JoinParticipant("user-other", CreatedAt);
+            current.Set(filled, revision: 1);
+        };
+
+        var error = await Assert.ThrowsAsync<MatchFullException>(
+            () => service.JoinAsync(MatchId, "user-2", default));
+
+        Assert.Equal(2, error.MaxPlayers);
+        var stored = store.ReadCurrent(MatchId);
+        Assert.Equal(2, stored.CurrentPlayers);
+        Assert.Contains(stored.Participants, participant => participant.UserId == OwnerId);
+        Assert.Contains(stored.Participants, participant => participant.UserId == "user-other");
+        Assert.DoesNotContain(stored.Participants, participant => participant.UserId == "user-2");
+        Assert.Empty(publisher.Events);
+    }
+
     [Fact]
     [Trait("Category", "Unit")]
     public async Task Cancel_WhenEveryReplaceConflicts_ThrowsWithoutPublishing()
