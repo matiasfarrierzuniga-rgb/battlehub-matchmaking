@@ -2,6 +2,7 @@ using System.Security.Claims;
 using BattleHub.Matchmaking.Api.Application.Matches;
 using BattleHub.Matchmaking.Api.Configuration;
 using BattleHub.Matchmaking.Api.Domain.Matches;
+using BattleHub.Matchmaking.Api.Infrastructure.Profiles;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Authorization;
 
@@ -9,7 +10,7 @@ namespace BattleHub.Matchmaking.Api.Transport.Matches;
 
 [ApiController]
 [Route("api/matches")]
-public sealed class MatchesController(MatchService matchService) : ControllerBase
+public sealed class MatchesController(MatchService matchService, IProfileDirectory? profiles = null) : ControllerBase
 {
     [HttpPost]
     [Authorize(Policy = MatchAuthorization.UserPolicy)]
@@ -26,7 +27,8 @@ public sealed class MatchesController(MatchService matchService) : ControllerBas
         var match = await matchService.CreateAsync(
             new CreateMatchCommand(request.Title, request.GameType, request.MaxPlayers),
             userId,
-            cancellationToken);
+            cancellationToken,
+            await GetDisplayNameAsync(cancellationToken));
 
         return CreatedAtAction(nameof(Get), new { matchId = match.Id }, match.ToResponse());
     }
@@ -64,8 +66,13 @@ public sealed class MatchesController(MatchService matchService) : ControllerBas
 
     [HttpPost("{matchId}/join")]
     [Authorize(Policy = MatchAuthorization.UserPolicy)]
-    public async Task<ActionResult<MatchResponse>> Join(string matchId, CancellationToken cancellationToken) =>
-        await ExecuteForUser((userId, ct) => matchService.JoinAsync(matchId, userId, ct), cancellationToken);
+    public async Task<ActionResult<MatchResponse>> Join(string matchId, CancellationToken cancellationToken)
+    {
+        var displayName = GetUserId() is null ? null : await GetDisplayNameAsync(cancellationToken);
+        return await ExecuteForUser(
+            (userId, ct) => matchService.JoinAsync(matchId, userId, ct, displayName),
+            cancellationToken);
+    }
 
     [HttpPost("{matchId}/leave")]
     [Authorize(Policy = MatchAuthorization.UserPolicy)]
@@ -93,4 +100,11 @@ public sealed class MatchesController(MatchService matchService) : ControllerBas
     }
 
     private string? GetUserId() => MatchAuthorization.UserId(User);
+
+    // Profile Service es la fuente del nombre visible; el claim "name" solo es un respaldo.
+    private async Task<string?> GetDisplayNameAsync(CancellationToken cancellationToken) =>
+        (profiles is null
+            ? null
+            : await profiles.GetCurrentDisplayNameAsync(Request.Headers.Authorization.ToString(), cancellationToken))
+        ?? HttpContext?.User.FindFirstValue("name");
 }
