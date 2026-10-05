@@ -84,6 +84,8 @@ builder.Services.AddSingleton<IMatchCleanupStore, MongoMatchCleanupStore>();
 builder.Services.AddSingleton<IMatchEventPublisher, SignalRMatchEventPublisher>();
 builder.Services.AddSingleton<MatchService>();
 builder.Services.AddSingleton<FinishMatchService>();
+builder.Services.AddSingleton<MatchCleanupService>();
+builder.Services.AddHostedService<MatchCleanupBackgroundService>();
 
 var app = builder.Build();
 

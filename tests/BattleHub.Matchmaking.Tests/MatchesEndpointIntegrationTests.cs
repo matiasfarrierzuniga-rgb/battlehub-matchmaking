@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using BattleHub.Matchmaking.Api.Application.Matches;
+using BattleHub.Matchmaking.Api.Application.Matches.Cleanup;
 using BattleHub.Matchmaking.Api.Domain.Matches;
 using BattleHub.Matchmaking.Api.Transport.Matches;
 using BattleHub.Matchmaking.Tests.Support;
@@ -18,11 +19,18 @@ namespace BattleHub.Matchmaking.Tests;
 public class MatchesEndpointIntegrationTests : IClassFixture<MatchesEndpointIntegrationTests.Factory>
 {
     private readonly HttpClient _client;
+    private readonly Factory _factory;
 
     public MatchesEndpointIntegrationTests(Factory factory)
     {
+        _factory = factory;
         _client = factory.CreateClient();
     }
+
+    [Fact]
+    [Trait("Category", "Integration")]
+    public void MatchCleanupService_IsRegistered() =>
+        Assert.NotNull(_factory.Services.GetService<MatchCleanupService>());
 
     [Fact]
     [Trait("Category", "Integration")]
@@ -255,6 +263,7 @@ public class MatchesEndpointIntegrationTests : IClassFixture<MatchesEndpointInte
             builder.ConfigureAppConfiguration((_, configuration) => configuration.AddInMemoryCollection(
                 new Dictionary<string, string?>
                 {
+                    ["Cleanup:Enabled"] = "false",
                     ["Auth0:Domain"] = "test.auth0.invalid",
                     ["Auth0:Audience"] = "test-matchmaking-api",
                     ["GameServices:Clients:typing-client"] = "typing"
