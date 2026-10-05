@@ -74,14 +74,22 @@ public class MongoMatchCleanupOperationsTests
     public void CancellationReplacement_ExpiresIncrementsRevisionAndKeepsActivityMonotonic()
     {
         var lastActivityAt = CreatedAt.AddHours(3);
-        var stored = CreateStored(MatchStatus.Started, revision: 7, lastActivityAt: lastActivityAt);
+        var stored = CreateStored(
+            MatchStatus.Started,
+            revision: 7,
+            lastActivityAt: lastActivityAt,
+            userId: "auth0|123",
+            displayName: "Matias");
 
         var replacement = MongoMatchCleanupOperations.BuildCancellationReplacement(
             stored, CreatedAt.AddHours(2));
 
+        var participant = Assert.Single(replacement.Participants);
         Assert.Equal(MatchStatus.Cancelled, replacement.Status);
         Assert.Equal(8, replacement.Revision);
         Assert.Equal(lastActivityAt, replacement.LastActivityAt);
+        Assert.Equal("auth0|123", participant.UserId);
+        Assert.Equal("Matias", participant.DisplayName);
         Assert.Equal(MatchStatus.Started, stored.Match.Status);
     }
 
@@ -109,7 +117,9 @@ public class MongoMatchCleanupOperationsTests
     private static StoredMatch CreateStored(
         MatchStatus status,
         long revision,
-        DateTimeOffset? lastActivityAt = null)
+        DateTimeOffset? lastActivityAt = null,
+        string userId = "user-1",
+        string? displayName = null)
     {
         var match = Match.Rehydrate(
             "match-1",
@@ -120,7 +130,7 @@ public class MongoMatchCleanupOperationsTests
             lastActivityAt ?? CreatedAt,
             4,
             status,
-            [new MatchParticipant("user-1", CreatedAt, CreatedAt)]);
+            [new MatchParticipant(userId, CreatedAt, CreatedAt, displayName)]);
         return new StoredMatch(match, revision);
     }
 }

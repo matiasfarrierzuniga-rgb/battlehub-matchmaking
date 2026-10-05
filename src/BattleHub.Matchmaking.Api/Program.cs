@@ -19,6 +19,22 @@ builder.Services.AddSignalR();
 builder.Services.AddProblemDetails();
 builder.Services.AddExceptionHandler<MatchExceptionHandler>();
 
+var corsOptions = builder.Configuration
+    .GetSection(CorsOptions.SectionName)
+    .Get<CorsOptions>() ?? new CorsOptions();
+
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy(CorsOptions.SectionName, policy =>
+    {
+        policy
+            .WithOrigins(corsOptions.Origins)
+            .AllowAnyHeader()
+            .AllowAnyMethod()
+            .AllowCredentials();
+    });
+});
+
 builder.Services
     .AddOptions<Auth0Options>()
     .Bind(builder.Configuration.GetSection(Auth0Options.SectionName))
@@ -91,6 +107,7 @@ var app = builder.Build();
 
 app.UseExceptionHandler();
 
+app.UseCors(CorsOptions.SectionName);
 app.UseAuthentication();
 app.UseAuthorization();
 

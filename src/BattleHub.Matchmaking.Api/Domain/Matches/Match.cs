@@ -99,7 +99,10 @@ public sealed class Match
         return match;
     }
 
-    public bool JoinParticipant(string userId, DateTimeOffset occurredAt)
+    public bool JoinParticipant(
+        string userId,
+        DateTimeOffset occurredAt,
+        string? displayName = null)
     {
         EnsureMembershipCanChange();
         ArgumentException.ThrowIfNullOrWhiteSpace(userId);
@@ -115,7 +118,7 @@ public sealed class Match
             throw new MatchFullException(Id, MaxPlayers);
         }
 
-        _participants.Add(new MatchParticipant(userId, occurredAt, occurredAt));
+        _participants.Add(new MatchParticipant(userId, occurredAt, occurredAt, displayName));
         UpdateLastActivity(occurredAt);
         return true;
     }

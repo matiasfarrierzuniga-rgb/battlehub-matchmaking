@@ -49,6 +49,7 @@ public class MatchDocumentMapperTests
         Assert.Equal(document.MaxPlayers, stored.Match.MaxPlayers);
         Assert.Equal(document.Status, stored.Match.Status);
         Assert.Equal(document.Revision, stored.Revision);
+        Assert.Equal("Player One", Assert.Single(stored.Match.Participants).DisplayName);
     }
 
     [Fact]
@@ -60,8 +61,30 @@ public class MatchDocumentMapperTests
 
         var participant = Assert.Single(roundTripped.Participants);
         Assert.Equal("user-1", participant.UserId);
+        Assert.Equal("Player One", participant.DisplayName);
         Assert.Equal(JoinedAt, participant.JoinedAt);
         Assert.Equal(LastHeartbeatAt, participant.LastHeartbeatAt);
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public void ToDocument_PreservesParticipantDisplayName()
+    {
+        var match = CreateMatch();
+        match.JoinParticipant("user-1", JoinedAt, "Player One");
+
+        var document = MatchDocumentMapper.ToDocument(match, 0);
+
+        Assert.Equal("Player One", Assert.Single(document.Participants).DisplayName);
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public void ToDomain_OldParticipantWithoutDisplayName_FallsBackToUserId()
+    {
+        var stored = MatchDocumentMapper.ToDomain(CreateDocument(MatchStatus.Waiting, displayName: null));
+
+        Assert.Equal("user-1", Assert.Single(stored.Match.Participants).DisplayName);
     }
 
     [Fact]
@@ -224,7 +247,10 @@ public class MatchDocumentMapperTests
     private static Match CreateMatch() =>
         new("match-1", "Friday match", "Chess", "owner-1", CreatedAt, 4);
 
-    private static MatchDocument CreateDocument(MatchStatus status, long revision = 4) => new()
+    private static MatchDocument CreateDocument(
+        MatchStatus status,
+        long revision = 4,
+        string? displayName = "Player One") => new()
     {
         Id = "match-1",
         Title = "Friday match",
@@ -240,6 +266,7 @@ public class MatchDocumentMapperTests
             new MatchParticipantDocument
             {
                 UserId = "user-1",
+                DisplayName = displayName,
                 JoinedAt = JoinedAt,
                 LastHeartbeatAt = LastHeartbeatAt
             }

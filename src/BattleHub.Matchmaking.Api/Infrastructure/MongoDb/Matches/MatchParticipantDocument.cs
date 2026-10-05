@@ -7,6 +7,8 @@ public sealed class MatchParticipantDocument
 {
     public required string UserId { get; init; }
 
+    public string? DisplayName { get; init; }
+
     [BsonRepresentation(BsonType.DateTime)]
     public DateTimeOffset JoinedAt { get; init; }
 

@@ -24,6 +24,7 @@ public static class MatchDocumentMapper
                 .Select(participant => new MatchParticipantDocument
                 {
                     UserId = participant.UserId,
+                    DisplayName = participant.DisplayName,
                     JoinedAt = participant.JoinedAt.ToUniversalTime(),
                     LastHeartbeatAt = participant.LastHeartbeatAt.ToUniversalTime()
                 })
@@ -39,7 +40,8 @@ public static class MatchDocumentMapper
             new MatchParticipant(
                 participant.UserId,
                 participant.JoinedAt,
-                participant.LastHeartbeatAt));
+                participant.LastHeartbeatAt,
+                participant.DisplayName));
 
         var match = Match.Rehydrate(
             document.Id,

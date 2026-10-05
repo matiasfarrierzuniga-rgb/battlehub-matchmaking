@@ -24,9 +24,25 @@ public class MatchServiceTests
         Assert.Equal(1, match.CurrentPlayers);
         var owner = Assert.Single(match.Participants);
         Assert.Equal(OwnerId, owner.UserId);
+        Assert.Equal(OwnerId, owner.DisplayName);
         Assert.Equal(DatabaseNow, owner.JoinedAt);
         Assert.Same(match, Assert.Single(store.Inserts));
         Assert.Equal(MatchEventNames.MatchCreated, Assert.Single(publisher.Events).Name);
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public async Task Create_WithDisplayName_UsesItForOwnerParticipant()
+    {
+        var (service, _, _) = CreateService();
+
+        var match = await service.CreateAsync(
+            new CreateMatchCommand("Friday match", "Chess", 4),
+            OwnerId,
+            default,
+            "Owner Name");
+
+        Assert.Equal("Owner Name", Assert.Single(match.Participants).DisplayName);
     }
 
     [Fact]
@@ -150,6 +166,30 @@ public class MatchServiceTests
         Assert.Equal(DatabaseNow, Assert.Single(result.Participants).JoinedAt);
         Assert.Equal(MatchEventNames.PlayerJoined, Assert.Single(publisher.Events).Name);
         Assert.Equal(["replace", $"event:{MatchEventNames.PlayerJoined}"], trace);
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public async Task Join_WithDisplayName_UsesItForParticipant()
+    {
+        var (service, store, _) = CreateService();
+        store.Set(CreateMatch());
+
+        var result = await service.JoinAsync(MatchId, "user-2", default, "Player Two");
+
+        Assert.Equal("Player Two", Assert.Single(result.Participants).DisplayName);
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public async Task Join_WithoutDisplayName_FallsBackToUserId()
+    {
+        var (service, store, _) = CreateService();
+        store.Set(CreateMatch());
+
+        var result = await service.JoinAsync(MatchId, "user-2", default);
+
+        Assert.Equal("user-2", Assert.Single(result.Participants).DisplayName);
     }
 
     [Fact]
@@ -599,7 +639,10 @@ public class MatchServiceTests
             match.MaxPlayers,
             match.Status,
             match.Participants.Select(participant => new MatchParticipant(
-                participant.UserId, participant.JoinedAt, participant.LastHeartbeatAt)));
+                participant.UserId,
+                participant.JoinedAt,
+                participant.LastHeartbeatAt,
+                participant.DisplayName)));
     }
 
     private sealed class FakeEventPublisher(List<string>? trace = null) : IMatchEventPublisher

@@ -84,7 +84,8 @@ public sealed class MatchCleanupService(
             match.Participants.Select(participant => new MatchParticipant(
                 participant.UserId,
                 participant.JoinedAt,
-                participant.LastHeartbeatAt)));
+                participant.LastHeartbeatAt,
+                participant.DisplayName)));
 
         cancelled.Expire(databaseNow);
         return cancelled;

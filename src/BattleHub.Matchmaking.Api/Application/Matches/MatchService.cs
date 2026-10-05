@@ -9,7 +9,8 @@ public sealed class MatchService(IMatchStore store, IMatchEventPublisher eventPu
     public async Task<Match> CreateAsync(
         CreateMatchCommand command,
         string createdBy,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? displayName = null)
     {
         ArgumentNullException.ThrowIfNull(command);
         ArgumentException.ThrowIfNullOrWhiteSpace(createdBy);
@@ -23,7 +24,7 @@ public sealed class MatchService(IMatchStore store, IMatchEventPublisher eventPu
             databaseNow,
             command.MaxPlayers);
 
-        match.JoinParticipant(createdBy, databaseNow);
+        match.JoinParticipant(createdBy, databaseNow, displayName);
         await store.InsertAsync(match, cancellationToken);
         await eventPublisher.PublishAsync(MatchEventNames.MatchCreated, match, cancellationToken);
         return match;
@@ -49,11 +50,15 @@ public sealed class MatchService(IMatchStore store, IMatchEventPublisher eventPu
             .ToArray();
     }
 
-    public Task<Match> JoinAsync(string matchId, string userId, CancellationToken cancellationToken) =>
-        UpdateMembershipAsync(matchId, userId, join: true, cancellationToken);
+    public Task<Match> JoinAsync(
+        string matchId,
+        string userId,
+        CancellationToken cancellationToken,
+        string? displayName = null) =>
+        UpdateMembershipAsync(matchId, userId, join: true, cancellationToken, displayName);
 
     public Task<Match> LeaveAsync(string matchId, string userId, CancellationToken cancellationToken) =>
-        UpdateMembershipAsync(matchId, userId, join: false, cancellationToken);
+        UpdateMembershipAsync(matchId, userId, join: false, cancellationToken, displayName: null);
 
     public async Task<Match> HeartbeatAsync(
         string matchId,
@@ -158,7 +163,8 @@ public sealed class MatchService(IMatchStore store, IMatchEventPublisher eventPu
         string matchId,
         string userId,
         bool join,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? displayName)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(matchId);
         ArgumentException.ThrowIfNullOrWhiteSpace(userId);
@@ -170,7 +176,7 @@ public sealed class MatchService(IMatchStore store, IMatchEventPublisher eventPu
             var expectedStatus = match.Status;
             var databaseNow = await store.GetDatabaseTimeAsync(cancellationToken);
             var changed = join
-                ? match.JoinParticipant(userId, databaseNow)
+                ? match.JoinParticipant(userId, databaseNow, displayName)
                 : match.LeaveParticipant(userId, databaseNow);
 
             if (!changed)

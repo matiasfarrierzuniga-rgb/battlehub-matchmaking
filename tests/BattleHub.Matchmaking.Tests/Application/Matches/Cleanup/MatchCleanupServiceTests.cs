@@ -136,16 +136,27 @@ public class MatchCleanupServiceTests
     {
         var futureActivity = DatabaseNow.AddMinutes(1);
         var original = Match(MatchStatus.Started, futureActivity, DatabaseNow.AddHours(-3),
-            [Participant("stale", DatabaseNow.AddMinutes(-3))]);
+            [new MatchParticipant(
+                "auth0|123",
+                DatabaseNow.AddMinutes(-10),
+                DatabaseNow.AddMinutes(-3),
+                "Matias")]);
         var (service, _, _, publisher) = Setup(original);
 
         await service.RunOnceAsync(default);
 
         var payload = Assert.Single(publisher.Events).Match;
+        var publishedParticipant = Assert.Single(payload.Participants);
+        var originalParticipant = Assert.Single(original.Participants);
         Assert.Equal(MatchStatus.Cancelled, payload.Status);
         Assert.Equal(futureActivity, payload.LastActivityAt);
+        Assert.Equal("auth0|123", publishedParticipant.UserId);
+        Assert.Equal("Matias", publishedParticipant.DisplayName);
         Assert.Equal(MatchStatus.Started, original.Status);
+        Assert.Equal("auth0|123", originalParticipant.UserId);
+        Assert.Equal("Matias", originalParticipant.DisplayName);
         Assert.NotSame(original, payload);
+        Assert.NotSame(originalParticipant, publishedParticipant);
     }
 
     [Fact]

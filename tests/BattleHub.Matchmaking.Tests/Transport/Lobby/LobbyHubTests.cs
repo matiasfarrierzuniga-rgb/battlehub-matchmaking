@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using BattleHub.Matchmaking.Api.Application.Matches;
+using BattleHub.Matchmaking.Api.Configuration;
 using BattleHub.Matchmaking.Api.Domain.Matches;
 using BattleHub.Matchmaking.Api.Transport.Lobby;
 using BattleHub.Matchmaking.Tests.Support;
@@ -11,17 +12,20 @@ public class LobbyHubTests
 {
     [Fact]
     [Trait("Category", "Unit")]
-    public void OnlyHeartbeat_RequiresAuthorization()
+    public void JoinMatchAndHeartbeat_RequireUserAuthorization()
     {
         var publicMethods = new[]
         {
             nameof(LobbyHub.JoinLobby),
-            nameof(LobbyHub.JoinMatch),
             nameof(LobbyHub.LeaveMatch)
         };
 
-        Assert.NotNull(typeof(LobbyHub).GetMethod(nameof(LobbyHub.Heartbeat))!
-            .GetCustomAttributes(typeof(AuthorizeAttribute), inherit: true).SingleOrDefault());
+        foreach (var method in new[] { nameof(LobbyHub.JoinMatch), nameof(LobbyHub.Heartbeat) })
+        {
+            var attribute = Assert.Single(typeof(LobbyHub).GetMethod(method)!
+                .GetCustomAttributes(typeof(AuthorizeAttribute), inherit: true).Cast<AuthorizeAttribute>());
+            Assert.Equal(MatchAuthorization.UserPolicy, attribute.Policy);
+        }
         Assert.All(publicMethods, method => Assert.Empty(typeof(LobbyHub).GetMethod(method)!
             .GetCustomAttributes(typeof(AuthorizeAttribute), inherit: true)));
         Assert.Empty(typeof(LobbyHub).GetCustomAttributes(typeof(AuthorizeAttribute), inherit: true));
@@ -42,11 +46,24 @@ public class LobbyHubTests
     [Trait("Category", "Unit")]
     public async Task JoinMatch_AddsConnectionToMatchGroup()
     {
-        var (hub, groups) = CreateHub();
+        var user = CreateUser(new Claim(ClaimTypes.NameIdentifier, "participant"));
+        var (hub, groups, _, _) = CreateHub(user, CreateMatch("participant"));
 
         await hub.JoinMatch("match-1");
 
         Assert.Equal([("connection-1", "match:match-1")], groups.Added);
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public async Task JoinMatch_WhenUserIsNotParticipant_IsRejectedWithoutJoiningGroup()
+    {
+        var user = CreateUser(new Claim(ClaimTypes.NameIdentifier, "other-user"));
+        var (hub, groups, _, _) = CreateHub(user, CreateMatch("participant"));
+
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => hub.JoinMatch("match-1"));
+
+        Assert.Empty(groups.Added);
     }
 
     [Fact]
@@ -64,7 +81,8 @@ public class LobbyHubTests
     [Trait("Category", "Unit")]
     public async Task JoinMatch_WithoutId_Throws()
     {
-        var (hub, _) = CreateHub();
+        var user = CreateUser(new Claim(ClaimTypes.NameIdentifier, "participant"));
+        var (hub, _, _, _) = CreateHub(user, CreateMatch("participant"));
 
         await Assert.ThrowsAnyAsync<ArgumentException>(() => hub.JoinMatch(" "));
     }
@@ -207,7 +225,10 @@ public class LobbyHubTests
             source.MaxPlayers,
             source.Status,
             source.Participants.Select(participant => new MatchParticipant(
-                participant.UserId, participant.JoinedAt, participant.LastHeartbeatAt)));
+                participant.UserId,
+                participant.JoinedAt,
+                participant.LastHeartbeatAt,
+                participant.DisplayName)));
     }
 
     private sealed class NoOpEventPublisher : IMatchEventPublisher

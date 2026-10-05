@@ -53,6 +53,37 @@ public class MatchesEndpointIntegrationTests : IClassFixture<MatchesEndpointInte
         Assert.DoesNotContain("\"status\":0", json);
         Assert.Contains("\"createdAt\":\"2026-10-02T18:00:00Z\"", json);
         Assert.DoesNotContain("+00:00", json);
+        Assert.Contains("\"gameType\":\"trivia\"", json);
+        Assert.Contains("\"participants\":[{\"userId\":\"owner-1\",\"displayName\":\"owner-1\"}]", json);
+        Assert.DoesNotContain("joinedAt", json);
+        Assert.DoesNotContain("lastHeartbeatAt", json);
+    }
+
+    [Fact]
+    [Trait("Category", "Integration")]
+    public async Task Cors_ConfiguredShellOrigin_IsAllowedWithCredentials()
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Options, "/api/matches");
+        request.Headers.Add("Origin", "http://localhost:4000");
+        request.Headers.Add("Access-Control-Request-Method", "GET");
+
+        using var response = await _client.SendAsync(request);
+
+        Assert.Equal("http://localhost:4000", response.Headers.GetValues("Access-Control-Allow-Origin").Single());
+        Assert.Equal("true", response.Headers.GetValues("Access-Control-Allow-Credentials").Single());
+    }
+
+    [Fact]
+    [Trait("Category", "Integration")]
+    public async Task Cors_UnconfiguredOrigin_IsNotAllowed()
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Options, "/api/matches");
+        request.Headers.Add("Origin", "http://evil.example");
+        request.Headers.Add("Access-Control-Request-Method", "GET");
+
+        using var response = await _client.SendAsync(request);
+
+        Assert.False(response.Headers.Contains("Access-Control-Allow-Origin"));
     }
 
     [Fact]
@@ -281,7 +312,9 @@ public class MatchesEndpointIntegrationTests : IClassFixture<MatchesEndpointInte
                 services.RemoveAll<IMatchStore>();
                 var store = new TestMatchStore();
                 var createdAt = new DateTimeOffset(2026, 10, 2, 12, 0, 0, TimeSpan.FromHours(-6));
-                store.Add(new Match("match-1", "Friday", "Trivia", "owner-1", createdAt, 4));
+                var waitingMatch = new Match("match-1", "Friday", "Trivia", "owner-1", createdAt, 4);
+                waitingMatch.JoinParticipant("owner-1", createdAt);
+                store.Add(waitingMatch);
                 store.Add(StartedMatch("typing-started", "typing", createdAt));
                 store.Add(StartedMatch("trivia-started", "trivia", createdAt));
                 services.AddSingleton<IMatchStore>(store);

@@ -243,5 +243,9 @@ public class FinishMatchServiceTests
     private static Match Clone(Match match) => Match.Rehydrate(
         match.Id, match.Title, match.GameType, match.CreatedBy, match.CreatedAt,
         match.LastActivityAt, match.MaxPlayers, match.Status,
-        match.Participants.Select(p => new MatchParticipant(p.UserId, p.JoinedAt, p.LastHeartbeatAt)));
+        match.Participants.Select(p => new MatchParticipant(
+            p.UserId,
+            p.JoinedAt,
+            p.LastHeartbeatAt,
+            p.DisplayName)));
 }

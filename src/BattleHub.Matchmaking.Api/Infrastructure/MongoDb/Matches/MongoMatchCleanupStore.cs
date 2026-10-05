@@ -152,7 +152,8 @@ internal static class MongoMatchCleanupOperations
             source.Participants.Select(participant => new MatchParticipant(
                 participant.UserId,
                 participant.JoinedAt,
-                participant.LastHeartbeatAt)));
+                participant.LastHeartbeatAt,
+                participant.DisplayName)));
 
         cancellation.Expire(databaseNow);
         return MatchDocumentMapper.ToDocument(cancellation, checked(stored.Revision + 1));

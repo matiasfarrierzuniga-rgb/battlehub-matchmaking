@@ -11,11 +11,24 @@ public static class MatchResponseMapper
         return new MatchResponse(
             match.Id,
             match.Title,
-            match.GameType,
+            NormalizeGameType(match.GameType),
             match.CreatedBy,
             match.CreatedAt.UtcDateTime,
             match.CurrentPlayers,
             match.MaxPlayers,
-            match.Status.ToString());
+            match.Status.ToString(),
+            match.Participants
+                .Select(participant => new MatchParticipantResponse(
+                    participant.UserId,
+                    participant.DisplayName))
+                .ToArray());
     }
+
+    private static string NormalizeGameType(string gameType) => gameType.ToLowerInvariant() switch
+    {
+        "typing" => "typing",
+        "trivia" => "trivia",
+        "memory" => "memory",
+        _ => gameType
+    };
 }

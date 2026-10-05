@@ -8,4 +8,9 @@ public sealed record MatchResponse(
     DateTime CreatedAt,
     int CurrentPlayers,
     int MaxPlayers,
-    string Status);
+    string Status,
+    MatchParticipantResponse[] Participants);
+
+public sealed record MatchParticipantResponse(
+    string UserId,
+    string DisplayName);
