@@ -68,6 +68,10 @@ public class FinishMatchServiceTests
     [Theory]
     [InlineData("typing", "trivia-client")]
     [InlineData("trivia", "typing-client")]
+    [InlineData("memory", "typing-client")]
+    [InlineData("typing", "unknown-client")]
+    [InlineData("trivia", "unknown-client")]
+    [InlineData("memory", "unknown-client")]
     [Trait("Category", "Unit")]
     public async Task ClientForDifferentGameType_IsRejected(string gameType, string clientId)
     {
@@ -78,6 +82,19 @@ public class FinishMatchServiceTests
 
         Assert.Equal(0, store.ReplaceCalls);
         Assert.Empty(publisher.Events);
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public async Task MemoryClient_CanFinishMemoryMatch()
+    {
+        var (service, store, publisher) = Setup(Started("Memory"));
+
+        var result = await service.FinishAsync("match-1", "memory-client", default);
+
+        Assert.Equal(MatchStatus.Finished, result.Status);
+        Assert.Equal(1, store.ReplaceCalls);
+        Assert.Equal(MatchEventNames.MatchFinished, Assert.Single(publisher.Events));
     }
 
     [Fact]
@@ -146,7 +163,8 @@ public class FinishMatchServiceTests
                 Clients = new Dictionary<string, string>
                 {
                     ["typing-client"] = "typing",
-                    ["trivia-client"] = "trivia"
+                    ["trivia-client"] = "trivia",
+                    ["memory-client"] = "memory"
                 }
             }),
             Options.Create(new CleanupOptions { ExpirationSeconds = 7200 }));

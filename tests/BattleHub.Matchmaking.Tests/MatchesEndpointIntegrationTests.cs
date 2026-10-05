@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Json;
 using BattleHub.Matchmaking.Api.Application.Matches;
 using BattleHub.Matchmaking.Api.Application.Matches.Cleanup;
+using BattleHub.Matchmaking.Api.Configuration;
 using BattleHub.Matchmaking.Api.Domain.Matches;
 using BattleHub.Matchmaking.Api.Transport.Matches;
 using BattleHub.Matchmaking.Tests.Support;
@@ -13,6 +14,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace BattleHub.Matchmaking.Tests;
 
@@ -260,11 +262,157 @@ public class MatchesEndpointIntegrationTests : IClassFixture<MatchesEndpointInte
         Assert.Equal("Cancelled", cancelled!.Status);
     }
 
-    private async Task<MatchResponse> CreateAuthenticatedMatch(string owner, string title)
+    [Fact]
+    [Trait("Category", "Integration")]
+    public void GameServiceClients_ResolveTypingTriviaAndMemory()
+    {
+        var clients = _factory.Services.GetRequiredService<IOptions<GameServiceOptions>>().Value.Clients;
+
+        Assert.Equal("typing", clients["8BWcE4T8HxhJrxU1CtgmNkjDOpkrN4Su"]);
+        Assert.Equal("trivia", clients["xYhNYG9lOGLA6KvEM0Y4cccH2f7JDD5x"]);
+        Assert.Equal("memory", clients["lfcBlgOCs9N0w6F6AWl4FqOs4xF9AQiN"]);
+        Assert.False(clients.ContainsKey("unknown-client"));
+    }
+
+    [Theory]
+    [InlineData(2)]
+    [InlineData(3)]
+    [InlineData(4)]
+    [InlineData(10)]
+    [Trait("Category", "Integration")]
+    public async Task PostMemoryMatch_NeverStoresCapacityAboveTwo(int requestedMaxPlayers)
+    {
+        var created = await CreateAuthenticatedMatch(
+            $"memory-owner-{requestedMaxPlayers}",
+            "Memory room",
+            "memory",
+            requestedMaxPlayers);
+
+        Assert.Equal("memory", created.GameType);
+        Assert.Equal(2, created.MaxPlayers);
+        Assert.Equal(1, created.CurrentPlayers);
+    }
+
+    [Theory]
+    [InlineData("typing", 4)]
+    [InlineData("Typing", 8)]
+    [InlineData("trivia", 4)]
+    [InlineData("Trivia", 6)]
+    [Trait("Category", "Integration")]
+    public async Task PostMatch_TypingAndTrivia_KeepRequestedCapacity(string gameType, int maxPlayers)
+    {
+        var created = await CreateAuthenticatedMatch(
+            $"capacity-{gameType}-{maxPlayers}",
+            "Capacity room",
+            gameType,
+            maxPlayers);
+
+        Assert.Equal(gameType.ToLowerInvariant(), created.GameType);
+        Assert.Equal(maxPlayers, created.MaxPlayers);
+    }
+
+    [Fact]
+    [Trait("Category", "Integration")]
+    public async Task MemoryMatch_AcceptsTwoPlayersAndRejectsTheThird()
+    {
+        var created = await CreateAuthenticatedMatch("memory-owner", "Memory room", "Memory", 10);
+
+        Assert.Equal("memory", created.GameType);
+        Assert.Equal(2, created.MaxPlayers);
+        Assert.Equal(1, created.CurrentPlayers);
+        Assert.Equal("memory-owner", Assert.Single(created.Participants).UserId);
+
+        using var joinSecond = new HttpRequestMessage(HttpMethod.Post, $"/api/matches/{created.Id}/join");
+        joinSecond.Headers.Add(TestAuthHandler.SubHeader, "memory-player-2");
+        using var secondResponse = await _client.SendAsync(joinSecond);
+        var second = await secondResponse.Content.ReadFromJsonAsync<MatchResponse>();
+
+        Assert.Equal(HttpStatusCode.OK, secondResponse.StatusCode);
+        Assert.Equal(2, second!.CurrentPlayers);
+        Assert.Equal(2, second.MaxPlayers);
+        Assert.Contains(second.Participants, participant => participant.UserId == "memory-player-2");
+
+        using var joinThird = new HttpRequestMessage(HttpMethod.Post, $"/api/matches/{created.Id}/join");
+        joinThird.Headers.Add(TestAuthHandler.SubHeader, "memory-player-3");
+        using var thirdResponse = await _client.SendAsync(joinThird);
+        var thirdBody = await thirdResponse.Content.ReadAsStringAsync();
+
+        Assert.Equal(HttpStatusCode.Conflict, thirdResponse.StatusCode);
+        Assert.Equal("application/problem+json", thirdResponse.Content.Headers.ContentType?.MediaType);
+        Assert.Contains("is full", thirdBody, StringComparison.OrdinalIgnoreCase);
+
+        using var getResponse = await _client.GetAsync($"/api/matches/{created.Id}");
+        var stored = await getResponse.Content.ReadFromJsonAsync<MatchResponse>();
+
+        Assert.Equal(HttpStatusCode.OK, getResponse.StatusCode);
+        Assert.Equal(2, stored!.CurrentPlayers);
+        Assert.Equal(2, stored.MaxPlayers);
+        Assert.Equal(2, stored.Participants.Length);
+        Assert.DoesNotContain(stored.Participants, participant => participant.UserId == "memory-player-3");
+    }
+
+    [Fact]
+    [Trait("Category", "Integration")]
+    public async Task Finish_WithConfiguredMemoryClient_SucceedsOnlyForMemory()
+    {
+        var created = await CreateAuthenticatedMatch("memory-finish-owner", "Finish memory", "memory", 2);
+        using var start = new HttpRequestMessage(HttpMethod.Post, $"/api/matches/{created.Id}/start");
+        start.Headers.Add(TestAuthHandler.NameIdentifierHeader, "memory-finish-owner");
+        using var startResponse = await _client.SendAsync(start);
+        Assert.Equal(HttpStatusCode.OK, startResponse.StatusCode);
+
+        using var memoryFinish = await _client.SendAsync(MachineRequest(
+            HttpMethod.Post,
+            $"/api/matches/{created.Id}/finish",
+            "matches.finish",
+            "lfcBlgOCs9N0w6F6AWl4FqOs4xF9AQiN"));
+        using var typingOnMemory = await _client.SendAsync(MachineRequest(
+            HttpMethod.Post,
+            $"/api/matches/{created.Id}/finish",
+            "matches.finish",
+            "8BWcE4T8HxhJrxU1CtgmNkjDOpkrN4Su"));
+
+        Assert.Equal(HttpStatusCode.NoContent, memoryFinish.StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, typingOnMemory.StatusCode);
+    }
+
+    [Theory]
+    [InlineData("typing-started", "8BWcE4T8HxhJrxU1CtgmNkjDOpkrN4Su")]
+    [InlineData("trivia-started", "xYhNYG9lOGLA6KvEM0Y4cccH2f7JDD5x")]
+    [Trait("Category", "Integration")]
+    public async Task Finish_WithConfiguredGameClient_Succeeds(string matchId, string clientId)
+    {
+        using var response = await _client.SendAsync(MachineRequest(
+            HttpMethod.Post,
+            $"/api/matches/{matchId}/finish",
+            "matches.finish",
+            clientId));
+
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+    }
+
+    [Fact]
+    [Trait("Category", "Integration")]
+    public async Task Finish_WithUnknownClient_ReturnsForbidden()
+    {
+        using var response = await _client.SendAsync(MachineRequest(
+            HttpMethod.Post,
+            "/api/matches/typing-started/finish",
+            "matches.finish",
+            "unknown-client"));
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    private async Task<MatchResponse> CreateAuthenticatedMatch(
+        string owner,
+        string title,
+        string gameType = "Trivia",
+        int maxPlayers = 4)
     {
         using var request = new HttpRequestMessage(HttpMethod.Post, "/api/matches")
         {
-            Content = JsonContent.Create(new { title, gameType = "Trivia", maxPlayers = 4 })
+            Content = JsonContent.Create(new { title, gameType, maxPlayers })
         };
         request.Headers.Add(TestAuthHandler.NameIdentifierHeader, owner);
 
@@ -276,12 +424,16 @@ public class MatchesEndpointIntegrationTests : IClassFixture<MatchesEndpointInte
     private async Task<HttpResponseMessage> SendAsMachine(string path, string scope) =>
         await _client.SendAsync(MachineRequest(HttpMethod.Post, path, scope));
 
-    private static HttpRequestMessage MachineRequest(HttpMethod method, string path, string scope)
+    private static HttpRequestMessage MachineRequest(
+        HttpMethod method,
+        string path,
+        string scope,
+        string clientId = "typing-client")
     {
         var request = new HttpRequestMessage(method, path);
-        request.Headers.Add(TestAuthHandler.SubHeader, "typing-client@clients");
+        request.Headers.Add(TestAuthHandler.SubHeader, $"{clientId}@clients");
         request.Headers.Add(TestAuthHandler.GtyHeader, "client-credentials");
-        request.Headers.Add(TestAuthHandler.AzpHeader, "typing-client");
+        request.Headers.Add(TestAuthHandler.AzpHeader, clientId);
         request.Headers.Add(TestAuthHandler.ScopeHeader, scope);
         return request;
     }

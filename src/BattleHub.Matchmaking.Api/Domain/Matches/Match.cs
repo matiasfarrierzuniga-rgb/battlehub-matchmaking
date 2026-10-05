@@ -19,6 +19,7 @@ public sealed class Match
         ArgumentException.ThrowIfNullOrWhiteSpace(gameType);
         ArgumentException.ThrowIfNullOrWhiteSpace(createdBy);
 
+        maxPlayers = GameCapacity.Apply(gameType, maxPlayers);
         if (maxPlayers <= 0)
         {
             throw new ArgumentOutOfRangeException(nameof(maxPlayers), "Max players must be greater than zero.");
@@ -76,7 +77,7 @@ public sealed class Match
         var match = new Match(id, title, gameType, createdBy, createdAt, maxPlayers);
         var participantList = participants.ToList();
 
-        if (participantList.Count > maxPlayers)
+        if (participantList.Count > match.MaxPlayers)
         {
             throw new ArgumentException("Participants cannot exceed max players.", nameof(participants));
         }
