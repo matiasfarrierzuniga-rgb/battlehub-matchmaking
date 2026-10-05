@@ -172,6 +172,19 @@ public class MatchLifecycleTests
 
     [Fact]
     [Trait("Category", "Unit")]
+    public void SuccessfulTransition_WithEarlierTimestamp_DoesNotMoveLastActivityBackward()
+    {
+        var match = CreateMatch();
+        match.JoinParticipant("user-1", TransitionAt);
+
+        match.RequestStart(OwnerId, CreatedAt.AddMinutes(2));
+
+        Assert.Equal(MatchStatus.Starting, match.Status);
+        Assert.Equal(TransitionAt, match.LastActivityAt);
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
     public void RejectedTransition_DoesNotChangeStatusOrLastActivity()
     {
         var match = CreateMatch();

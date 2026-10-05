@@ -55,6 +55,110 @@ public sealed class Match
 
     public int CurrentPlayers => _participants.Count;
 
+    public static Match Rehydrate(
+        string id,
+        string title,
+        string gameType,
+        string createdBy,
+        DateTimeOffset createdAt,
+        DateTimeOffset lastActivityAt,
+        int maxPlayers,
+        MatchStatus status,
+        IEnumerable<MatchParticipant> participants)
+    {
+        ArgumentNullException.ThrowIfNull(participants);
+
+        if (!Enum.IsDefined(status))
+        {
+            throw new ArgumentOutOfRangeException(nameof(status));
+        }
+
+        var match = new Match(id, title, gameType, createdBy, createdAt, maxPlayers);
+        var participantList = participants.ToList();
+
+        if (participantList.Count > maxPlayers)
+        {
+            throw new ArgumentException("Participants cannot exceed max players.", nameof(participants));
+        }
+
+        if (participantList.Any(participant => participant is null))
+        {
+            throw new ArgumentException("Participants cannot contain null values.", nameof(participants));
+        }
+
+        if (participantList
+            .GroupBy(participant => participant.UserId, StringComparer.Ordinal)
+            .Any(group => group.Count() > 1))
+        {
+            throw new ArgumentException("Participant user IDs must be unique.", nameof(participants));
+        }
+
+        match.LastActivityAt = lastActivityAt;
+        match.Status = status;
+        match._participants.AddRange(participantList);
+        return match;
+    }
+
+    public bool JoinParticipant(
+        string userId,
+        DateTimeOffset occurredAt,
+        string? displayName = null)
+    {
+        EnsureMembershipCanChange();
+        ArgumentException.ThrowIfNullOrWhiteSpace(userId);
+
+        if (_participants.Any(participant =>
+                string.Equals(participant.UserId, userId, StringComparison.Ordinal)))
+        {
+            return false;
+        }
+
+        if (CurrentPlayers >= MaxPlayers)
+        {
+            throw new MatchFullException(Id, MaxPlayers);
+        }
+
+        _participants.Add(new MatchParticipant(userId, occurredAt, occurredAt, displayName));
+        UpdateLastActivity(occurredAt);
+        return true;
+    }
+
+    public bool LeaveParticipant(string userId, DateTimeOffset occurredAt)
+    {
+        EnsureMembershipCanChange();
+        ArgumentException.ThrowIfNullOrWhiteSpace(userId);
+
+        var participant = _participants.Find(candidate =>
+            string.Equals(candidate.UserId, userId, StringComparison.Ordinal));
+
+        if (participant is null)
+        {
+            return false;
+        }
+
+        _participants.Remove(participant);
+        UpdateLastActivity(occurredAt);
+        return true;
+    }
+
+    public bool RecordHeartbeat(string userId, DateTimeOffset occurredAt)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(userId);
+
+        var participant = _participants.Find(candidate =>
+            string.Equals(candidate.UserId, userId, StringComparison.Ordinal));
+
+        if (participant is null)
+        {
+            throw new MatchParticipantNotFoundException(userId);
+        }
+
+        var participantChanged = participant.RecordHeartbeat(occurredAt);
+        var activityChanged = occurredAt > LastActivityAt;
+        UpdateLastActivity(occurredAt);
+        return participantChanged || activityChanged;
+    }
+
     public void RequestStart(string actorId, DateTimeOffset occurredAt)
     {
         EnsureOwner(actorId);
@@ -101,6 +205,14 @@ public sealed class Match
         }
     }
 
+    private void EnsureMembershipCanChange()
+    {
+        if (Status != MatchStatus.Waiting)
+        {
+            throw new MatchMembershipChangeNotAllowedException(Status);
+        }
+    }
+
     private void Transition(MatchStatus expectedStatus, MatchStatus targetStatus, DateTimeOffset occurredAt)
     {
         if (Status != expectedStatus)
@@ -114,6 +226,14 @@ public sealed class Match
     private void ApplyTransition(MatchStatus targetStatus, DateTimeOffset occurredAt)
     {
         Status = targetStatus;
-        LastActivityAt = occurredAt;
+        UpdateLastActivity(occurredAt);
+    }
+
+    private void UpdateLastActivity(DateTimeOffset occurredAt)
+    {
+        if (occurredAt > LastActivityAt)
+        {
+            LastActivityAt = occurredAt;
+        }
     }
 }

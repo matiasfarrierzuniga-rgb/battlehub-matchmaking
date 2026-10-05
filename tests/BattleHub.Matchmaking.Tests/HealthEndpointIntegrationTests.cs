@@ -3,11 +3,11 @@ using Microsoft.AspNetCore.Mvc.Testing;
 
 namespace BattleHub.Matchmaking.Tests;
 
-public class HealthEndpointIntegrationTests : IClassFixture<WebApplicationFactory<Program>>
+public class HealthEndpointIntegrationTests : IClassFixture<MatchesEndpointIntegrationTests.Factory>
 {
     private readonly HttpClient _client;
 
-    public HealthEndpointIntegrationTests(WebApplicationFactory<Program> factory)
+    public HealthEndpointIntegrationTests(MatchesEndpointIntegrationTests.Factory factory)
     {
         _client = factory.CreateClient();
     }
