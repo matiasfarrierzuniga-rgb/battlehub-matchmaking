@@ -3,6 +3,7 @@ using BattleHub.Matchmaking.Api.Application.Matches.Cleanup;
 using BattleHub.Matchmaking.Api.Configuration;
 using BattleHub.Matchmaking.Api.Infrastructure.MongoDb;
 using BattleHub.Matchmaking.Api.Infrastructure.MongoDb.Matches;
+using BattleHub.Matchmaking.Api.Infrastructure.Profiles;
 using BattleHub.Matchmaking.Api.Transport;
 using BattleHub.Matchmaking.Api.Transport.Lobby;
 using Microsoft.Extensions.Options;
@@ -18,6 +19,12 @@ builder.Services.AddControllers();
 builder.Services.AddSignalR();
 builder.Services.AddProblemDetails();
 builder.Services.AddExceptionHandler<MatchExceptionHandler>();
+
+builder.Services
+    .AddOptions<ProfileOptions>()
+    .Bind(builder.Configuration.GetSection(ProfileOptions.SectionName));
+builder.Services.AddHttpClient<IProfileDirectory, HttpProfileDirectory>(client =>
+    client.Timeout = TimeSpan.FromSeconds(5));
 
 var corsOptions = builder.Configuration
     .GetSection(CorsOptions.SectionName)
