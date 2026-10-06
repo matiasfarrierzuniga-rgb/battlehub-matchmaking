@@ -275,25 +275,6 @@ public class MatchesEndpointIntegrationTests : IClassFixture<MatchesEndpointInte
     }
 
     [Theory]
-    [InlineData(2)]
-    [InlineData(3)]
-    [InlineData(4)]
-    [InlineData(10)]
-    [Trait("Category", "Integration")]
-    public async Task PostMemoryMatch_NeverStoresCapacityAboveTwo(int requestedMaxPlayers)
-    {
-        var created = await CreateAuthenticatedMatch(
-            $"memory-owner-{requestedMaxPlayers}",
-            "Memory room",
-            "memory",
-            requestedMaxPlayers);
-
-        Assert.Equal("memory", created.GameType);
-        Assert.Equal(2, created.MaxPlayers);
-        Assert.Equal(1, created.CurrentPlayers);
-    }
-
-    [Theory]
     [InlineData("typing", 4)]
     [InlineData("Typing", 8)]
     [InlineData("trivia", 4)]
@@ -309,46 +290,6 @@ public class MatchesEndpointIntegrationTests : IClassFixture<MatchesEndpointInte
 
         Assert.Equal(gameType.ToLowerInvariant(), created.GameType);
         Assert.Equal(maxPlayers, created.MaxPlayers);
-    }
-
-    [Fact]
-    [Trait("Category", "Integration")]
-    public async Task MemoryMatch_AcceptsTwoPlayersAndRejectsTheThird()
-    {
-        var created = await CreateAuthenticatedMatch("memory-owner", "Memory room", "Memory", 10);
-
-        Assert.Equal("memory", created.GameType);
-        Assert.Equal(2, created.MaxPlayers);
-        Assert.Equal(1, created.CurrentPlayers);
-        Assert.Equal("memory-owner", Assert.Single(created.Participants).UserId);
-
-        using var joinSecond = new HttpRequestMessage(HttpMethod.Post, $"/api/matches/{created.Id}/join");
-        joinSecond.Headers.Add(TestAuthHandler.SubHeader, "memory-player-2");
-        using var secondResponse = await _client.SendAsync(joinSecond);
-        var second = await secondResponse.Content.ReadFromJsonAsync<MatchResponse>();
-
-        Assert.Equal(HttpStatusCode.OK, secondResponse.StatusCode);
-        Assert.Equal(2, second!.CurrentPlayers);
-        Assert.Equal(2, second.MaxPlayers);
-        Assert.Contains(second.Participants, participant => participant.UserId == "memory-player-2");
-
-        using var joinThird = new HttpRequestMessage(HttpMethod.Post, $"/api/matches/{created.Id}/join");
-        joinThird.Headers.Add(TestAuthHandler.SubHeader, "memory-player-3");
-        using var thirdResponse = await _client.SendAsync(joinThird);
-        var thirdBody = await thirdResponse.Content.ReadAsStringAsync();
-
-        Assert.Equal(HttpStatusCode.Conflict, thirdResponse.StatusCode);
-        Assert.Equal("application/problem+json", thirdResponse.Content.Headers.ContentType?.MediaType);
-        Assert.Contains("is full", thirdBody, StringComparison.OrdinalIgnoreCase);
-
-        using var getResponse = await _client.GetAsync($"/api/matches/{created.Id}");
-        var stored = await getResponse.Content.ReadFromJsonAsync<MatchResponse>();
-
-        Assert.Equal(HttpStatusCode.OK, getResponse.StatusCode);
-        Assert.Equal(2, stored!.CurrentPlayers);
-        Assert.Equal(2, stored.MaxPlayers);
-        Assert.Equal(2, stored.Participants.Length);
-        Assert.DoesNotContain(stored.Participants, participant => participant.UserId == "memory-player-3");
     }
 
     [Fact]
