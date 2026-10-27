@@ -103,6 +103,7 @@ builder.Services.AddSingleton<IMongoDatabase>(serviceProvider =>
 
 builder.Services.AddSingleton<MatchmakingMongoContext>();
 builder.Services.AddSingleton<IMatchStore, MongoMatchStore>();
+builder.Services.AddSingleton<IMatchHistoryStore, MongoMatchHistoryStore>();
 builder.Services.AddSingleton<IMatchCleanupStore, MongoMatchCleanupStore>();
 builder.Services.AddSingleton<IMatchEventPublisher, SignalRMatchEventPublisher>();
 builder.Services.AddSingleton<MatchService>();

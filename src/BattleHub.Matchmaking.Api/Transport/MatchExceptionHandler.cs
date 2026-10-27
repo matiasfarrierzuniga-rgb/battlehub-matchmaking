@@ -1,5 +1,6 @@
 using BattleHub.Matchmaking.Api.Application.Matches;
 using BattleHub.Matchmaking.Api.Domain.Matches;
+using BattleHub.Matchmaking.Api.Infrastructure.Profiles;
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.WebUtilities;
@@ -19,11 +20,12 @@ public sealed class MatchExceptionHandler(IProblemDetailsService problemDetailsS
             MatchNotFoundException => StatusCodes.Status404NotFound,
             MatchConcurrencyException or
             MatchFullException or
+            MatchInsufficientParticipantsException or
             InvalidMatchTransitionException or
             MatchMembershipChangeNotAllowedException => StatusCodes.Status409Conflict,
             UnauthorizedAccessException => StatusCodes.Status403Forbidden,
             ArgumentException => StatusCodes.Status400BadRequest,
-            MongoException => StatusCodes.Status503ServiceUnavailable,
+            MongoException or ProfileUnavailableException => StatusCodes.Status503ServiceUnavailable,
             _ => 0
         };
 
@@ -41,9 +43,12 @@ public sealed class MatchExceptionHandler(IProblemDetailsService problemDetailsS
             {
                 Status = statusCode,
                 Title = ReasonPhrases.GetReasonPhrase(statusCode),
-                Detail = exception is MongoException
-                    ? "MongoDB no está disponible."
-                    : exception.Message
+                Detail = exception switch
+                {
+                    MongoException => "MongoDB no está disponible.",
+                    ProfileUnavailableException => "Profile Service no está disponible.",
+                    _ => exception.Message
+                }
             }
         });
     }

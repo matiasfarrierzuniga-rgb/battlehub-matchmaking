@@ -82,11 +82,12 @@ public class MatchMembershipTests
     public void JoinParticipant_OutsideWaiting_IsRejected(MatchStatus status)
     {
         var match = CreateInStatus(status);
+        var playersBefore = match.CurrentPlayers;
 
         var error = Assert.Throws<MatchMembershipChangeNotAllowedException>(
             () => match.JoinParticipant("user-1", OccurredAt));
         Assert.Equal(status, error.CurrentStatus);
-        Assert.Empty(match.Participants);
+        Assert.Equal(playersBefore, match.CurrentPlayers);
     }
 
     [Fact]
@@ -193,6 +194,12 @@ public class MatchMembershipTests
     private static Match CreateMatch(int maxPlayers = 2) =>
         new("match-1", "Friday match", "Chess", OwnerId, CreatedAt, maxPlayers);
 
+    private static void PrepareForStart(Match match)
+    {
+        match.JoinParticipant(OwnerId, CreatedAt);
+        match.JoinParticipant("user-2", CreatedAt);
+    }
+
     private static Match CreateInStatus(MatchStatus status)
     {
         var match = CreateMatch();
@@ -200,13 +207,16 @@ public class MatchMembershipTests
         switch (status)
         {
             case MatchStatus.Starting:
+                PrepareForStart(match);
                 match.RequestStart(OwnerId, CreatedAt.AddMinutes(1));
                 break;
             case MatchStatus.Started:
+                PrepareForStart(match);
                 match.RequestStart(OwnerId, CreatedAt.AddMinutes(1));
                 match.CompleteStart(CreatedAt.AddMinutes(2));
                 break;
             case MatchStatus.Finished:
+                PrepareForStart(match);
                 match.RequestStart(OwnerId, CreatedAt.AddMinutes(1));
                 match.CompleteStart(CreatedAt.AddMinutes(2));
                 match.Finish(CreatedAt.AddMinutes(3));

@@ -19,6 +19,7 @@ public sealed class Match
         ArgumentException.ThrowIfNullOrWhiteSpace(gameType);
         ArgumentException.ThrowIfNullOrWhiteSpace(createdBy);
 
+        GameCapacity.Ensure(gameType, maxPlayers);
         if (maxPlayers <= 0)
         {
             throw new ArgumentOutOfRangeException(nameof(maxPlayers), "Max players must be greater than zero.");
@@ -47,11 +48,19 @@ public sealed class Match
 
     public DateTimeOffset LastActivityAt { get; private set; }
 
+    public DateTimeOffset? StartedAt { get; private set; }
+
+    public DateTimeOffset? FinishedAt { get; private set; }
+
+    public DateTimeOffset? CancelledAt { get; private set; }
+
     public int MaxPlayers { get; }
 
     public MatchStatus Status { get; private set; }
 
     public IReadOnlyCollection<MatchParticipant> Participants { get; }
+
+    public const int MinimumParticipantsToStart = 2;
 
     public int CurrentPlayers => _participants.Count;
 
@@ -64,7 +73,10 @@ public sealed class Match
         DateTimeOffset lastActivityAt,
         int maxPlayers,
         MatchStatus status,
-        IEnumerable<MatchParticipant> participants)
+        IEnumerable<MatchParticipant> participants,
+        DateTimeOffset? startedAt = null,
+        DateTimeOffset? finishedAt = null,
+        DateTimeOffset? cancelledAt = null)
     {
         ArgumentNullException.ThrowIfNull(participants);
 
@@ -95,6 +107,9 @@ public sealed class Match
 
         match.LastActivityAt = lastActivityAt;
         match.Status = status;
+        match.StartedAt = startedAt;
+        match.FinishedAt = finishedAt;
+        match.CancelledAt = cancelledAt;
         match._participants.AddRange(participantList);
         return match;
     }
@@ -162,6 +177,16 @@ public sealed class Match
     public void RequestStart(string actorId, DateTimeOffset occurredAt)
     {
         EnsureOwner(actorId);
+        if (Status != MatchStatus.Waiting)
+        {
+            throw new InvalidMatchTransitionException(Status, MatchStatus.Starting);
+        }
+
+        if (CurrentPlayers < MinimumParticipantsToStart)
+        {
+            throw new MatchInsufficientParticipantsException(Id, CurrentPlayers, MinimumParticipantsToStart);
+        }
+
         Transition(MatchStatus.Waiting, MatchStatus.Starting, occurredAt);
     }
 
@@ -227,6 +252,18 @@ public sealed class Match
     {
         Status = targetStatus;
         UpdateLastActivity(occurredAt);
+        switch (targetStatus)
+        {
+            case MatchStatus.Started:
+                StartedAt ??= occurredAt;
+                break;
+            case MatchStatus.Finished:
+                FinishedAt ??= occurredAt;
+                break;
+            case MatchStatus.Cancelled:
+                CancelledAt ??= occurredAt;
+                break;
+        }
     }
 
     private void UpdateLastActivity(DateTimeOffset occurredAt)
