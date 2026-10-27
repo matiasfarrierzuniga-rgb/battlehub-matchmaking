@@ -1,6 +1,7 @@
 using BattleHub.Matchmaking.Api.Application.Matches;
 using BattleHub.Matchmaking.Api.Configuration;
 using BattleHub.Matchmaking.Api.Domain.Matches;
+using BattleHub.Matchmaking.Tests.Support;
 using Microsoft.Extensions.Options;
 
 namespace BattleHub.Matchmaking.Tests.Application.Matches;
@@ -158,6 +159,7 @@ public class FinishMatchServiceTests
         var service = new FinishMatchService(
             store,
             publisher,
+            new MemoryMatchHistoryStore(),
             Options.Create(new GameServiceOptions
             {
                 Clients = new Dictionary<string, string>
@@ -175,9 +177,12 @@ public class FinishMatchServiceTests
 
     private static Match WithStatus(string gameType, MatchStatus status)
     {
-        var match = new Match("match-1", "Friday", gameType, "owner-1", CreatedAt, 4);
+        var maxPlayers = string.Equals(gameType, "memory", StringComparison.OrdinalIgnoreCase) ? 2 : 4;
+        var match = new Match("match-1", "Friday", gameType, "owner-1", CreatedAt, maxPlayers);
         if (status is MatchStatus.Starting or MatchStatus.Started or MatchStatus.Cancelled)
         {
+            match.JoinParticipant("owner-1", CreatedAt);
+            match.JoinParticipant("user-2", CreatedAt);
             match.RequestStart("owner-1", CreatedAt.AddMinutes(1));
         }
         if (status == MatchStatus.Started)

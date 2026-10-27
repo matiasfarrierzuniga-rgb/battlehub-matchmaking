@@ -189,7 +189,10 @@ public class MatchesControllerTests
     public async Task Start_Success_ReturnsOk()
     {
         var (controller, store) = CreateController(OwnerId);
-        store.Add(CreateMatch());
+        var match = CreateMatch();
+        match.JoinParticipant(OwnerId, store.Now);
+        match.JoinParticipant("user-2", store.Now);
+        store.Add(match);
 
         var result = await controller.Start("match-1", default);
 
@@ -217,7 +220,10 @@ public class MatchesControllerTests
         IProfileDirectory? profiles = null)
     {
         var store = new TestMatchStore();
-        var controller = new MatchesController(new MatchService(store, new TestEventPublisher()), profiles)
+        var controller = new MatchesController(
+            new MatchService(store, new TestEventPublisher()),
+            new MemoryMatchHistoryStore(),
+            profiles ?? (userId is null ? null : new FakeProfileDirectory(null)))
         {
             ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() }
         };
@@ -239,10 +245,26 @@ public class MatchesControllerTests
     {
         public string? ReceivedAuthorization { get; private set; }
 
+        public IReadOnlyList<string> Permissions { get; set; } =
+        [
+            "matches.create",
+            "games.typing.play",
+            "games.trivia.play",
+            "games.memory.play"
+        ];
+
         public Task<string?> GetCurrentDisplayNameAsync(string? authorizationHeader, CancellationToken cancellationToken)
         {
             ReceivedAuthorization = authorizationHeader;
             return Task.FromResult(displayName);
+        }
+
+        public Task<IReadOnlyList<string>> GetCurrentPermissionsAsync(
+            string? authorizationHeader,
+            CancellationToken cancellationToken)
+        {
+            ReceivedAuthorization = authorizationHeader;
+            return Task.FromResult(Permissions);
         }
     }
 }

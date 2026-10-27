@@ -10,7 +10,10 @@ namespace BattleHub.Matchmaking.Api.Transport.Matches;
 
 [ApiController]
 [Route("api/matches")]
-public sealed class MatchesController(MatchService matchService, IProfileDirectory? profiles = null) : ControllerBase
+public sealed class MatchesController(
+    MatchService matchService,
+    IMatchHistoryStore history,
+    IProfileDirectory? profiles = null) : ControllerBase
 {
     [HttpPost]
     [Authorize(Policy = MatchAuthorization.UserPolicy)]
@@ -24,6 +27,7 @@ public sealed class MatchesController(MatchService matchService, IProfileDirecto
             return Unauthorized();
         }
 
+        await EnsureCanCreateAsync(request.GameType, request.MaxPlayers, cancellationToken);
         var match = await matchService.CreateAsync(
             new CreateMatchCommand(request.Title, request.GameType, request.MaxPlayers),
             userId,
@@ -33,7 +37,45 @@ public sealed class MatchesController(MatchService matchService, IProfileDirecto
         return CreatedAtAction(nameof(Get), new { matchId = match.Id }, match.ToResponse());
     }
 
+    [HttpGet("history")]
+    [Authorize(Policy = MatchAuthorization.UserPolicy)]
+    public async Task<ActionResult<MatchHistoryPageResponse>> History(
+        [FromQuery] string? gameType,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = MatchHistory.DefaultPageSize,
+        CancellationToken cancellationToken = default)
+    {
+        var userId = GetUserId();
+        if (userId is null)
+        {
+            return Unauthorized();
+        }
+
+        if (Request.Query.ContainsKey("gameType") && string.IsNullOrWhiteSpace(gameType))
+        {
+            throw new ArgumentException("Game type is required.");
+        }
+
+        var result = await history.ListAsync(userId, gameType, page, pageSize, cancellationToken);
+        return Ok(new MatchHistoryPageResponse(
+            result.Items.Select(item => new MatchHistoryResponse(
+                item.MatchId,
+                item.GameType,
+                item.Status,
+                item.MaxPlayers,
+                item.ParticipantCount,
+                item.IsHost,
+                item.CreatedAt.UtcDateTime,
+                item.StartedAt?.UtcDateTime,
+                item.FinishedAt?.UtcDateTime,
+                item.CancelledAt?.UtcDateTime)).ToArray(),
+            result.Page,
+            result.PageSize,
+            result.TotalCount));
+    }
+
     [HttpGet]
+    [Authorize(Policy = MatchAuthorization.UserPolicy)]
     public async Task<ActionResult<MatchResponse[]>> List(
         [FromQuery] string? gameType,
         [FromQuery] string? status,
@@ -59,6 +101,7 @@ public sealed class MatchesController(MatchService matchService, IProfileDirecto
     }
 
     [HttpGet("{matchId}")]
+    [Authorize(Policy = MatchAuthorization.UserPolicy)]
     public async Task<ActionResult<MatchResponse>> Get(
         string matchId,
         CancellationToken cancellationToken) =>
@@ -68,10 +111,20 @@ public sealed class MatchesController(MatchService matchService, IProfileDirecto
     [Authorize(Policy = MatchAuthorization.UserPolicy)]
     public async Task<ActionResult<MatchResponse>> Join(string matchId, CancellationToken cancellationToken)
     {
-        var displayName = GetUserId() is null ? null : await GetDisplayNameAsync(cancellationToken);
-        return await ExecuteForUser(
-            (userId, ct) => matchService.JoinAsync(matchId, userId, ct, displayName),
-            cancellationToken);
+        var userId = GetUserId();
+        if (userId is null)
+        {
+            return Unauthorized();
+        }
+
+        var existing = await matchService.GetAsync(matchId, cancellationToken);
+        await EnsureCanPlayAsync(existing.GameType, cancellationToken);
+        var match = await matchService.JoinAsync(
+            matchId,
+            userId,
+            cancellationToken,
+            await GetDisplayNameAsync(cancellationToken));
+        return Ok(match.ToResponse());
     }
 
     [HttpPost("{matchId}/leave")]
@@ -97,6 +150,56 @@ public sealed class MatchesController(MatchService matchService, IProfileDirecto
         return userId is null
             ? Unauthorized()
             : Ok((await action(userId, cancellationToken)).ToResponse());
+    }
+
+    private async Task EnsureCanCreateAsync(
+        string gameType,
+        int maxPlayers,
+        CancellationToken cancellationToken)
+    {
+        var playPermission = RequirePlayPermission(gameType);
+        GameCapacity.Ensure(gameType, maxPlayers);
+        var granted = await GrantedPermissionsAsync(cancellationToken);
+        if (!granted.Contains(SupportedGames.CreatePermission) || !granted.Contains(playPermission))
+        {
+            throw new UnauthorizedAccessException("The user is not allowed to create this match.");
+        }
+    }
+
+    private async Task EnsureCanPlayAsync(string gameType, CancellationToken cancellationToken)
+    {
+        var playPermission = RequirePlayPermission(gameType);
+        var granted = await GrantedPermissionsAsync(cancellationToken);
+        if (!granted.Contains(playPermission))
+        {
+            throw new UnauthorizedAccessException("The user is not allowed to join this match.");
+        }
+    }
+
+    private static string RequirePlayPermission(string gameType)
+    {
+        if (!SupportedGames.TryGetPlayPermission(gameType, out var playPermission))
+        {
+            throw new ArgumentException(
+                string.IsNullOrWhiteSpace(gameType)
+                    ? "Game type is required."
+                    : $"'{gameType}' is not a supported game type.");
+        }
+
+        return playPermission;
+    }
+
+    private async Task<HashSet<string>> GrantedPermissionsAsync(CancellationToken cancellationToken)
+    {
+        if (profiles is null)
+        {
+            throw new ProfileUnavailableException();
+        }
+
+        var permissions = await profiles.GetCurrentPermissionsAsync(
+            Request.Headers.Authorization.ToString(),
+            cancellationToken);
+        return new HashSet<string>(permissions, StringComparer.Ordinal);
     }
 
     private string? GetUserId() => MatchAuthorization.UserId(User);

@@ -17,6 +17,9 @@ public static class MatchDocumentMapper
             CreatedBy = match.CreatedBy,
             CreatedAt = match.CreatedAt.ToUniversalTime(),
             LastActivityAt = match.LastActivityAt.ToUniversalTime(),
+            StartedAt = match.StartedAt?.ToUniversalTime(),
+            FinishedAt = match.FinishedAt?.ToUniversalTime(),
+            CancelledAt = match.CancelledAt?.ToUniversalTime(),
             MaxPlayers = match.MaxPlayers,
             Status = match.Status,
             Revision = revision,
@@ -52,7 +55,10 @@ public static class MatchDocumentMapper
             document.LastActivityAt,
             document.MaxPlayers,
             document.Status,
-            participants);
+            participants,
+            document.StartedAt,
+            document.FinishedAt,
+            document.CancelledAt);
 
         return new StoredMatch(match, document.Revision);
     }

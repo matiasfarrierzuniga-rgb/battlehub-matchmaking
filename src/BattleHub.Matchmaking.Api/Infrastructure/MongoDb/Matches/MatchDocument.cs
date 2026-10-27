@@ -21,6 +21,18 @@ public sealed class MatchDocument
     [BsonRepresentation(BsonType.DateTime)]
     public DateTimeOffset LastActivityAt { get; init; }
 
+    [BsonRepresentation(BsonType.DateTime)]
+    [BsonIgnoreIfNull]
+    public DateTimeOffset? StartedAt { get; init; }
+
+    [BsonRepresentation(BsonType.DateTime)]
+    [BsonIgnoreIfNull]
+    public DateTimeOffset? FinishedAt { get; init; }
+
+    [BsonRepresentation(BsonType.DateTime)]
+    [BsonIgnoreIfNull]
+    public DateTimeOffset? CancelledAt { get; init; }
+
     public int MaxPlayers { get; init; }
 
     public MatchStatus Status { get; init; }

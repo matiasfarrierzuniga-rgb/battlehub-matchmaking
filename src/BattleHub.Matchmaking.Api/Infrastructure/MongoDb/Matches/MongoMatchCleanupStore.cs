@@ -5,7 +5,9 @@ using MongoDB.Driver;
 
 namespace BattleHub.Matchmaking.Api.Infrastructure.MongoDb.Matches;
 
-public sealed class MongoMatchCleanupStore(MatchmakingMongoContext context) : IMatchCleanupStore
+public sealed class MongoMatchCleanupStore(
+    MatchmakingMongoContext context,
+    IMatchHistoryStore history) : IMatchCleanupStore
 {
     public Task<bool> TryCancelInactiveWaitingAsync(
         StoredMatch stored,
@@ -80,7 +82,13 @@ public sealed class MongoMatchCleanupStore(MatchmakingMongoContext context) : IM
 
         var replacement = MongoMatchCleanupOperations.BuildCancellationReplacement(stored, databaseNow);
         var result = await context.Matches.ReplaceOneAsync(filter, replacement, cancellationToken: cancellationToken);
-        return result.ModifiedCount == 1;
+        if (result.ModifiedCount != 1)
+        {
+            return false;
+        }
+
+        await history.RecordAsync(MatchDocumentMapper.ToDomain(replacement).Match, cancellationToken);
+        return true;
     }
 }
 
@@ -153,7 +161,10 @@ internal static class MongoMatchCleanupOperations
                 participant.UserId,
                 participant.JoinedAt,
                 participant.LastHeartbeatAt,
-                participant.DisplayName)));
+                participant.DisplayName)),
+            source.StartedAt,
+            source.FinishedAt,
+            source.CancelledAt);
 
         cancellation.Expire(databaseNow);
         return MatchDocumentMapper.ToDocument(cancellation, checked(stored.Revision + 1));

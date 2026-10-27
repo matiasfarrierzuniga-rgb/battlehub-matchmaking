@@ -13,6 +13,9 @@ public sealed class MatchmakingMongoContext
 
     public IMongoCollection<MatchDocument> Matches => Database.GetCollection<MatchDocument>("matches");
 
+    public IMongoCollection<MatchHistoryDocument> History =>
+        Database.GetCollection<MatchHistoryDocument>("matchHistory");
+
     internal Task<BsonDocument> GetServerHelloAsync(CancellationToken cancellationToken) =>
         Database.RunCommandAsync<BsonDocument>(
             new BsonDocument("hello", 1),

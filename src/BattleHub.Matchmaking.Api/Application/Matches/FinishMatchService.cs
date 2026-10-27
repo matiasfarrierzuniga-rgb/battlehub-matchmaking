@@ -7,6 +7,7 @@ namespace BattleHub.Matchmaking.Api.Application.Matches;
 public sealed class FinishMatchService(
     IMatchStore store,
     IMatchEventPublisher eventPublisher,
+    IMatchHistoryStore history,
     IOptions<GameServiceOptions> gameServices,
     IOptions<CleanupOptions> cleanup)
 {
@@ -35,6 +36,7 @@ public sealed class FinishMatchService(
 
             if (match.Status == MatchStatus.Finished)
             {
+                await history.RecordAsync(match, cancellationToken);
                 return match;
             }
 
@@ -55,6 +57,7 @@ public sealed class FinishMatchService(
             {
                 await eventPublisher.PublishAsync(
                     MatchEventNames.MatchFinished, match, cancellationToken);
+                await history.RecordAsync(match, cancellationToken);
                 return match;
             }
         }

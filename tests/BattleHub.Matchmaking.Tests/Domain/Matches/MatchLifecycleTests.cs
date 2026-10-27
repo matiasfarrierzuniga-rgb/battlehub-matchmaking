@@ -24,7 +24,7 @@ public class MatchLifecycleTests
     [Trait("Category", "Unit")]
     public void RequestStart_ByOwner_TransitionsWaitingToStarting()
     {
-        var match = CreateMatch();
+        var match = CreateReadyMatch();
 
         match.RequestStart(OwnerId, TransitionAt);
 
@@ -163,7 +163,7 @@ public class MatchLifecycleTests
     [Trait("Category", "Unit")]
     public void SuccessfulTransition_UsesProvidedTimestampForLastActivity()
     {
-        var match = CreateMatch();
+        var match = CreateReadyMatch();
 
         match.RequestStart(OwnerId, TransitionAt);
 
@@ -174,7 +174,8 @@ public class MatchLifecycleTests
     [Trait("Category", "Unit")]
     public void SuccessfulTransition_WithEarlierTimestamp_DoesNotMoveLastActivityBackward()
     {
-        var match = CreateMatch();
+        var match = CreateMatch(maxPlayers: 4);
+        match.JoinParticipant(OwnerId, CreatedAt);
         match.JoinParticipant("user-1", TransitionAt);
 
         match.RequestStart(OwnerId, CreatedAt.AddMinutes(2));
@@ -194,12 +195,62 @@ public class MatchLifecycleTests
         Assert.Equal(CreatedAt, match.LastActivityAt);
     }
 
-    private static Match CreateMatch() =>
-        new("match-1", "Friday match", "Chess", OwnerId, CreatedAt, 2);
+    [Theory]
+    [InlineData("typing", 4)]
+    [InlineData("trivia", 4)]
+    [InlineData("memory", 2)]
+    [Trait("Category", "Unit")]
+    public void RequestStart_WithOneParticipant_IsRejectedAndStaysWaiting(string gameType, int maxPlayers)
+    {
+        var match = new Match("match-1", "Friday match", gameType, OwnerId, CreatedAt, maxPlayers);
+        match.JoinParticipant(OwnerId, CreatedAt);
+
+        var error = Assert.Throws<MatchInsufficientParticipantsException>(
+            () => match.RequestStart(OwnerId, TransitionAt));
+
+        Assert.Equal(1, error.CurrentPlayers);
+        Assert.Equal(Match.MinimumParticipantsToStart, error.MinimumPlayers);
+        Assert.Equal(MatchStatus.Waiting, match.Status);
+        Assert.Equal(CreatedAt, match.LastActivityAt);
+    }
+
+    [Theory]
+    [InlineData("typing", 2)]
+    [InlineData("trivia", 2)]
+    [InlineData("memory", 2)]
+    [InlineData("typing", 3)]
+    [InlineData("trivia", 3)]
+    [Trait("Category", "Unit")]
+    public void RequestStart_WithAtLeastTwoParticipants_IsAllowed(string gameType, int players)
+    {
+        var maxPlayers = string.Equals(gameType, "memory", StringComparison.OrdinalIgnoreCase) ? 2 : 4;
+        var match = new Match("match-1", "Friday match", gameType, OwnerId, CreatedAt, maxPlayers);
+        match.JoinParticipant(OwnerId, CreatedAt);
+        for (var index = 2; index <= players; index++)
+        {
+            match.JoinParticipant($"user-{index}", CreatedAt);
+        }
+
+        match.RequestStart(OwnerId, TransitionAt);
+
+        Assert.Equal(MatchStatus.Starting, match.Status);
+        Assert.Equal(players, match.CurrentPlayers);
+    }
+
+    private static Match CreateMatch(int maxPlayers = 2) =>
+        new("match-1", "Friday match", "Chess", OwnerId, CreatedAt, maxPlayers);
+
+    private static Match CreateReadyMatch()
+    {
+        var match = CreateMatch();
+        match.JoinParticipant(OwnerId, CreatedAt);
+        match.JoinParticipant("user-2", CreatedAt);
+        return match;
+    }
 
     private static Match CreateStartingMatch()
     {
-        var match = CreateMatch();
+        var match = CreateReadyMatch();
         match.RequestStart(OwnerId, CreatedAt.AddMinutes(1));
         return match;
     }

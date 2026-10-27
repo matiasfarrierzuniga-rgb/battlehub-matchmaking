@@ -85,6 +85,64 @@ public class HttpProfileDirectoryTests
         Assert.Null(await directory.GetCurrentDisplayNameAsync("Bearer user-token", default));
     }
 
+    [Fact]
+    [Trait("Category", "Unit")]
+    public async Task GetCurrentPermissions_ReadsProfilePermissions()
+    {
+        var handler = new StubHandler(_ => Json(new
+        {
+            permissions = new[] { "matches.create", "games.memory.play" }
+        }));
+        var directory = CreateDirectory(handler);
+
+        var permissions = await directory.GetCurrentPermissionsAsync("Bearer user-token", default);
+
+        Assert.Equal(["matches.create", "games.memory.play"], permissions);
+        Assert.Equal(
+            new Uri("http://localhost:5220/api/profiles/me/permissions"),
+            Assert.Single(handler.Requests).RequestUri);
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public async Task GetCurrentPermissions_WhenProfileReturns404_DoesNotTreatItAsUnavailable()
+    {
+        var directory = CreateDirectory(new StubHandler(_ => new HttpResponseMessage(HttpStatusCode.NotFound)));
+
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(
+            () => directory.GetCurrentPermissionsAsync("Bearer user-token", default));
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public async Task GetCurrentPermissions_WhenProfileReturns500_IsUnavailable()
+    {
+        var directory = CreateDirectory(new StubHandler(_ => new HttpResponseMessage(HttpStatusCode.InternalServerError)));
+
+        await Assert.ThrowsAsync<ProfileUnavailableException>(
+            () => directory.GetCurrentPermissionsAsync("Bearer user-token", default));
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public async Task GetCurrentPermissions_WhenProfileTimesOut_IsUnavailable()
+    {
+        var directory = CreateDirectory(new StubHandler(_ => throw new TaskCanceledException("timeout")));
+
+        await Assert.ThrowsAsync<ProfileUnavailableException>(
+            () => directory.GetCurrentPermissionsAsync("Bearer user-token", default));
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public async Task GetCurrentPermissions_WhenConnectionIsRefused_IsUnavailable()
+    {
+        var directory = CreateDirectory(new StubHandler(_ => throw new HttpRequestException("connection refused")));
+
+        await Assert.ThrowsAsync<ProfileUnavailableException>(
+            () => directory.GetCurrentPermissionsAsync("Bearer user-token", default));
+    }
+
     private static HttpProfileDirectory CreateDirectory(StubHandler handler, string baseUrl = ProfileUrl) =>
         new(
             new HttpClient(handler),

@@ -4,6 +4,7 @@ using BattleHub.Matchmaking.Api.Application.Matches;
 using BattleHub.Matchmaking.Api.Application.Matches.Cleanup;
 using BattleHub.Matchmaking.Api.Configuration;
 using BattleHub.Matchmaking.Api.Domain.Matches;
+using BattleHub.Matchmaking.Api.Infrastructure.Profiles;
 using BattleHub.Matchmaking.Api.Transport.Matches;
 using BattleHub.Matchmaking.Tests.Support;
 using Microsoft.AspNetCore.Hosting;
@@ -47,7 +48,7 @@ public class MatchesEndpointIntegrationTests : IClassFixture<MatchesEndpointInte
     [Trait("Category", "Integration")]
     public async Task GetMatches_WithFakeStore_ReturnsOkAndTextStatusWithUtcDate()
     {
-        var response = await _client.GetAsync("/api/matches");
+        var response = await _client.SendAsync(Authenticated(HttpMethod.Get, "/api/matches"));
         var json = await response.Content.ReadAsStringAsync();
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -92,7 +93,7 @@ public class MatchesEndpointIntegrationTests : IClassFixture<MatchesEndpointInte
     [Trait("Category", "Integration")]
     public async Task GetMissingMatch_ReturnsNotFoundProblemDetails()
     {
-        var response = await _client.GetAsync("/api/matches/missing");
+        var response = await _client.SendAsync(Authenticated(HttpMethod.Get, "/api/matches/missing"));
         var json = await response.Content.ReadAsStringAsync();
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
@@ -104,7 +105,7 @@ public class MatchesEndpointIntegrationTests : IClassFixture<MatchesEndpointInte
     [Trait("Category", "Integration")]
     public async Task GetMatches_WithInvalidStatus_ReturnsBadRequest()
     {
-        var response = await _client.GetAsync("/api/matches?status=invalid");
+        var response = await _client.SendAsync(Authenticated(HttpMethod.Get, "/api/matches?status=invalid"));
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
@@ -274,6 +275,43 @@ public class MatchesEndpointIntegrationTests : IClassFixture<MatchesEndpointInte
         Assert.False(clients.ContainsKey("unknown-client"));
     }
 
+    [Fact]
+    [Trait("Category", "Integration")]
+    public async Task PostMemoryMatch_WithTwoPlayers_IsCreated()
+    {
+        var created = await CreateAuthenticatedMatch("memory-owner-2", "Memory room", "memory", 2);
+
+        Assert.Equal("memory", created.GameType);
+        Assert.Equal(2, created.MaxPlayers);
+        Assert.Equal(1, created.CurrentPlayers);
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(3)]
+    [InlineData(4)]
+    [InlineData(10)]
+    [Trait("Category", "Integration")]
+    public async Task PostMemoryMatch_WithoutExactlyTwoPlayers_IsBadRequest(int requestedMaxPlayers)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/api/matches")
+        {
+            Content = JsonContent.Create(new
+            {
+                title = $"Memory {requestedMaxPlayers}",
+                gameType = "memory",
+                maxPlayers = requestedMaxPlayers
+            })
+        };
+        request.Headers.Add(TestAuthHandler.NameIdentifierHeader, "memory-owner");
+
+        using var response = await _client.SendAsync(request);
+        var body = await response.Content.ReadAsStringAsync();
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Contains("Memory requires exactly 2 players.", body);
+    }
+
     [Theory]
     [InlineData("typing", 4)]
     [InlineData("Typing", 8)]
@@ -294,9 +332,53 @@ public class MatchesEndpointIntegrationTests : IClassFixture<MatchesEndpointInte
 
     [Fact]
     [Trait("Category", "Integration")]
+    public async Task MemoryMatch_AcceptsTwoPlayersAndRejectsTheThird()
+    {
+        var created = await CreateAuthenticatedMatch("memory-owner", "Memory room", "Memory", 2);
+
+        Assert.Equal("memory", created.GameType);
+        Assert.Equal(2, created.MaxPlayers);
+        Assert.Equal(1, created.CurrentPlayers);
+        Assert.Equal("memory-owner", Assert.Single(created.Participants).UserId);
+
+        using var joinSecond = new HttpRequestMessage(HttpMethod.Post, $"/api/matches/{created.Id}/join");
+        joinSecond.Headers.Add(TestAuthHandler.SubHeader, "memory-player-2");
+        using var secondResponse = await _client.SendAsync(joinSecond);
+        var second = await secondResponse.Content.ReadFromJsonAsync<MatchResponse>();
+
+        Assert.Equal(HttpStatusCode.OK, secondResponse.StatusCode);
+        Assert.Equal(2, second!.CurrentPlayers);
+        Assert.Equal(2, second.MaxPlayers);
+        Assert.Contains(second.Participants, participant => participant.UserId == "memory-player-2");
+
+        using var joinThird = new HttpRequestMessage(HttpMethod.Post, $"/api/matches/{created.Id}/join");
+        joinThird.Headers.Add(TestAuthHandler.SubHeader, "memory-player-3");
+        using var thirdResponse = await _client.SendAsync(joinThird);
+        var thirdBody = await thirdResponse.Content.ReadAsStringAsync();
+
+        Assert.Equal(HttpStatusCode.Conflict, thirdResponse.StatusCode);
+        Assert.Equal("application/problem+json", thirdResponse.Content.Headers.ContentType?.MediaType);
+        Assert.Contains("is full", thirdBody, StringComparison.OrdinalIgnoreCase);
+
+        using var getResponse = await _client.SendAsync(Authenticated(HttpMethod.Get, $"/api/matches/{created.Id}"));
+        var stored = await getResponse.Content.ReadFromJsonAsync<MatchResponse>();
+
+        Assert.Equal(HttpStatusCode.OK, getResponse.StatusCode);
+        Assert.Equal(2, stored!.CurrentPlayers);
+        Assert.Equal(2, stored.MaxPlayers);
+        Assert.Equal(2, stored.Participants.Length);
+        Assert.DoesNotContain(stored.Participants, participant => participant.UserId == "memory-player-3");
+    }
+
+    [Fact]
+    [Trait("Category", "Integration")]
     public async Task Finish_WithConfiguredMemoryClient_SucceedsOnlyForMemory()
     {
         var created = await CreateAuthenticatedMatch("memory-finish-owner", "Finish memory", "memory", 2);
+        using var join = new HttpRequestMessage(HttpMethod.Post, $"/api/matches/{created.Id}/join");
+        join.Headers.Add(TestAuthHandler.SubHeader, "memory-finish-player");
+        using var joinResponse = await _client.SendAsync(join);
+        Assert.Equal(HttpStatusCode.OK, joinResponse.StatusCode);
         using var start = new HttpRequestMessage(HttpMethod.Post, $"/api/matches/{created.Id}/start");
         start.Headers.Add(TestAuthHandler.NameIdentifierHeader, "memory-finish-owner");
         using var startResponse = await _client.SendAsync(start);
@@ -343,6 +425,81 @@ public class MatchesEndpointIntegrationTests : IClassFixture<MatchesEndpointInte
             "unknown-client"));
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Theory]
+    [InlineData("typing")]
+    [InlineData("trivia")]
+    [InlineData("memory")]
+    [Trait("Category", "Integration")]
+    public async Task Start_WithOneParticipant_ReturnsConflictAndStaysWaiting(string gameType)
+    {
+        var maxPlayers = gameType == "memory" ? 2 : 4;
+        var created = await CreateAuthenticatedMatch($"{gameType}-host", $"{gameType} solo", gameType, maxPlayers);
+
+        using var start = new HttpRequestMessage(HttpMethod.Post, $"/api/matches/{created.Id}/start");
+        start.Headers.Add(TestAuthHandler.NameIdentifierHeader, $"{gameType}-host");
+        using var response = await _client.SendAsync(start);
+        var stored = await _client.SendAsync(Authenticated(HttpMethod.Get, $"/api/matches/{created.Id}"));
+        var match = await stored.Content.ReadFromJsonAsync<MatchResponse>();
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        Assert.Equal("Waiting", match!.Status);
+        Assert.Equal(1, match.CurrentPlayers);
+    }
+
+    [Theory]
+    [InlineData("typing")]
+    [InlineData("trivia")]
+    [InlineData("memory")]
+    [Trait("Category", "Integration")]
+    public async Task Start_WithTwoParticipants_Starts(string gameType)
+    {
+        var maxPlayers = gameType == "memory" ? 2 : 4;
+        var created = await CreateAuthenticatedMatch($"{gameType}-owner", $"{gameType} pair", gameType, maxPlayers);
+        using var join = new HttpRequestMessage(HttpMethod.Post, $"/api/matches/{created.Id}/join");
+        join.Headers.Add(TestAuthHandler.SubHeader, $"{gameType}-guest");
+        using var joinResponse = await _client.SendAsync(join);
+        Assert.Equal(HttpStatusCode.OK, joinResponse.StatusCode);
+
+        using var start = new HttpRequestMessage(HttpMethod.Post, $"/api/matches/{created.Id}/start");
+        start.Headers.Add(TestAuthHandler.NameIdentifierHeader, $"{gameType}-owner");
+        using var response = await _client.SendAsync(start);
+        var started = await response.Content.ReadFromJsonAsync<MatchResponse>();
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("Started", started!.Status);
+        Assert.Equal(2, started.CurrentPlayers);
+    }
+
+    [Theory]
+    [InlineData("/api/matches")]
+    [InlineData("/api/matches/match-1")]
+    [Trait("Category", "Integration")]
+    public async Task Read_WithoutIdentity_ReturnsUnauthorized(string path)
+    {
+        using var response = await _client.GetAsync(path);
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
+    [Trait("Category", "Integration")]
+    public async Task Read_WithInvalidToken_ReturnsUnauthorized()
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/api/matches");
+        request.Headers.Add("Authorization", "Bearer not-a-jwt");
+
+        using var response = await _client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    private static HttpRequestMessage Authenticated(HttpMethod method, string path, string userId = "reader-1")
+    {
+        var request = new HttpRequestMessage(method, path);
+        request.Headers.Add(TestAuthHandler.NameIdentifierHeader, userId);
+        return request;
     }
 
     private async Task<MatchResponse> CreateAuthenticatedMatch(
@@ -402,6 +559,10 @@ public class MatchesEndpointIntegrationTests : IClassFixture<MatchesEndpointInte
                     })
                     .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>(
                         TestAuthHandler.AuthenticationScheme, _ => { });
+                services.RemoveAll<IProfileDirectory>();
+                services.AddSingleton<IProfileDirectory>(new GrantingProfileDirectory());
+                services.RemoveAll<IMatchHistoryStore>();
+                services.AddSingleton<IMatchHistoryStore>(new MemoryMatchHistoryStore());
                 services.RemoveAll<IMatchStore>();
                 var store = new TestMatchStore();
                 var createdAt = new DateTimeOffset(2026, 10, 2, 12, 0, 0, TimeSpan.FromHours(-6));
@@ -417,6 +578,8 @@ public class MatchesEndpointIntegrationTests : IClassFixture<MatchesEndpointInte
         private static Match StartedMatch(string id, string gameType, DateTimeOffset createdAt)
         {
             var match = new Match(id, "Started", gameType, "owner-1", createdAt, 4);
+            match.JoinParticipant("owner-1", createdAt);
+            match.JoinParticipant("player-2", createdAt);
             match.RequestStart("owner-1", createdAt.AddMinutes(1));
             match.CompleteStart(createdAt.AddMinutes(2));
             return match;

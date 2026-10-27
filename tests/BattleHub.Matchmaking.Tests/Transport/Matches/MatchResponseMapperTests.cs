@@ -64,7 +64,8 @@ public class MatchResponseMapperTests
     [Trait("Category", "Unit")]
     public void ToResponse_NormalizesOnlySupportedGameTypes(string gameType, string expected)
     {
-        var match = new Match("match-1", "Friday match", gameType, "owner-1", DateTimeOffset.UtcNow, 4);
+        var maxPlayers = string.Equals(gameType, "memory", StringComparison.OrdinalIgnoreCase) ? 2 : 4;
+        var match = new Match("match-1", "Friday match", gameType, "owner-1", DateTimeOffset.UtcNow, maxPlayers);
 
         Assert.Equal(expected, match.ToResponse().GameType);
     }
