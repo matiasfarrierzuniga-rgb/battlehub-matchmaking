@@ -28,7 +28,7 @@ public static class MatchHistory
             return null;
         }
 
-        if (!SupportedGames.TryGetPlayPermission(gameType, out _))
+        if (!SupportedGames.IsSupported(gameType))
         {
             throw new ArgumentException(
                 string.IsNullOrWhiteSpace(gameType)

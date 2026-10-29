@@ -4,7 +4,6 @@ using BattleHub.Matchmaking.Api.Application.Matches;
 using BattleHub.Matchmaking.Api.Domain.Matches;
 using BattleHub.Matchmaking.Api.Infrastructure.MongoDb;
 using BattleHub.Matchmaking.Api.Infrastructure.MongoDb.Matches;
-using BattleHub.Matchmaking.Api.Infrastructure.Profiles;
 using BattleHub.Matchmaking.Api.Transport.Matches;
 using BattleHub.Matchmaking.Tests.Support;
 using Microsoft.AspNetCore.Authentication;
@@ -95,9 +94,12 @@ public class MongoMatchFlowTests : IClassFixture<MongoMatchFlowTests.Factory>
             Assert.Equal(HttpStatusCode.OK, startResponse.StatusCode);
         }
 
-        using var finish = Machine(created.Id);
+        using var finish = Authorized(HttpMethod.Post, $"/api/matches/{created.Id}/finish", "history-guest");
         using var finishResponse = await _client.SendAsync(finish);
         Assert.Equal(HttpStatusCode.NoContent, finishResponse.StatusCode);
+        using var retry = Authorized(HttpMethod.Post, $"/api/matches/{created.Id}/finish", "history-host");
+        using var retryResponse = await _client.SendAsync(retry);
+        Assert.Equal(HttpStatusCode.NoContent, retryResponse.StatusCode);
 
         var document = await Load(created.Id);
         Assert.Equal(MatchStatus.Finished, document.Status);
@@ -110,6 +112,7 @@ public class MongoMatchFlowTests : IClassFixture<MongoMatchFlowTests.Factory>
         var outsider = await History("history-outsider");
 
         Assert.Contains(host.Items, item => item.MatchId == created.Id && item.IsHost && item.GameType == "typing");
+        Assert.Single(host.Items, item => item.MatchId == created.Id);
         Assert.Contains(guest.Items, item => item.MatchId == created.Id && !item.IsHost);
         Assert.DoesNotContain(outsider.Items, item => item.MatchId == created.Id);
     }
@@ -120,16 +123,6 @@ public class MongoMatchFlowTests : IClassFixture<MongoMatchFlowTests.Factory>
         using var response = await _client.SendAsync(request);
         response.EnsureSuccessStatusCode();
         return (await response.Content.ReadFromJsonAsync<HistoryPage>())!;
-    }
-
-    private static HttpRequestMessage Machine(string matchId)
-    {
-        var request = new HttpRequestMessage(HttpMethod.Post, $"/api/matches/{matchId}/finish");
-        request.Headers.Add(TestAuthHandler.SubHeader, "8BWcE4T8HxhJrxU1CtgmNkjDOpkrN4Su@clients");
-        request.Headers.Add(TestAuthHandler.GtyHeader, "client-credentials");
-        request.Headers.Add(TestAuthHandler.AzpHeader, "8BWcE4T8HxhJrxU1CtgmNkjDOpkrN4Su");
-        request.Headers.Add(TestAuthHandler.ScopeHeader, "matches.finish");
-        return request;
     }
 
     private sealed record HistoryPage(HistoryItem[] Items);
@@ -181,8 +174,6 @@ public class MongoMatchFlowTests : IClassFixture<MongoMatchFlowTests.Factory>
                     })
                     .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>(
                         TestAuthHandler.AuthenticationScheme, _ => { });
-                services.RemoveAll<IProfileDirectory>();
-                services.AddSingleton<IProfileDirectory>(new GrantingProfileDirectory());
             });
         }
 

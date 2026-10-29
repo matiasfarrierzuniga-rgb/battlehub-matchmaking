@@ -1,7 +1,6 @@
 using System.Security.Claims;
 using BattleHub.Matchmaking.Api.Application.Matches;
 using BattleHub.Matchmaking.Api.Domain.Matches;
-using BattleHub.Matchmaking.Api.Infrastructure.Profiles;
 using BattleHub.Matchmaking.Api.Transport.Matches;
 using BattleHub.Matchmaking.Tests.Support;
 using Microsoft.AspNetCore.Http;
@@ -125,49 +124,12 @@ public class MatchesControllerTests
 
     [Fact]
     [Trait("Category", "Unit")]
-    public async Task Create_UsesProfileDisplayNameWithCallerToken()
+    public async Task Join_UsesNameClaimOrUserId()
     {
-        var profiles = new FakeProfileDirectory("Ana");
-        var (controller, _) = CreateController(OwnerId, profiles: profiles);
-        controller.ControllerContext.HttpContext.Request.Headers.Authorization = "Bearer user-token";
-
-        var result = await controller.Create(new("Friday", "trivia", 4), default);
-
-        var response = Assert.IsType<MatchResponse>(Assert.IsType<CreatedAtActionResult>(result.Result).Value);
-        Assert.Equal(new MatchParticipantResponse(OwnerId, "Ana"), Assert.Single(response.Participants));
-        Assert.Equal("Bearer user-token", profiles.ReceivedAuthorization);
-    }
-
-    [Fact]
-    [Trait("Category", "Unit")]
-    public async Task Join_UsesProfileDisplayName()
-    {
-        var (controller, store) = CreateController("user-2", profiles: new FakeProfileDirectory("Luis"));
+        var (controller, store) = CreateController("user-2");
+        ((ClaimsIdentity)controller.User.Identity!).AddClaim(new Claim("name", "Luis"));
         store.Add(CreateMatch());
-
-        var result = await controller.Join("match-1", default);
-
-        Assert.Equal(new MatchParticipantResponse("user-2", "Luis"), Assert.Single(ResponseFrom(result).Participants));
-    }
-
-    [Fact]
-    [Trait("Category", "Unit")]
-    public async Task Join_WithoutProfileName_FallsBackToNameClaimAndThenUserId()
-    {
-        var (withClaim, store) = CreateController("user-2", profiles: new FakeProfileDirectory(null));
-        ((ClaimsIdentity)withClaim.User.Identity!).AddClaim(new Claim("name", "Luis"));
-        store.Add(CreateMatch());
-
-        var named = ResponseFrom(await withClaim.Join("match-1", default));
-
-        Assert.Equal("Luis", Assert.Single(named.Participants).DisplayName);
-
-        var (withoutClaim, otherStore) = CreateController("user-3", profiles: new FakeProfileDirectory(null));
-        otherStore.Add(CreateMatch());
-
-        var unnamed = ResponseFrom(await withoutClaim.Join("match-1", default));
-
-        Assert.Equal("user-3", Assert.Single(unnamed.Participants).DisplayName);
+        Assert.Equal("Luis", Assert.Single(ResponseFrom(await controller.Join("match-1", default)).Participants).DisplayName);
     }
 
     [Fact]
@@ -216,14 +178,12 @@ public class MatchesControllerTests
 
     private static (MatchesController Controller, TestMatchStore Store) CreateController(
         string? userId = null,
-        string claimType = ClaimTypes.NameIdentifier,
-        IProfileDirectory? profiles = null)
+        string claimType = ClaimTypes.NameIdentifier)
     {
         var store = new TestMatchStore();
         var controller = new MatchesController(
             new MatchService(store, new TestEventPublisher()),
-            new MemoryMatchHistoryStore(),
-            profiles ?? (userId is null ? null : new FakeProfileDirectory(null)))
+            new MemoryMatchHistoryStore())
         {
             ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() }
         };
@@ -241,30 +201,4 @@ public class MatchesControllerTests
         new("match-1", "Friday", "Trivia", OwnerId,
             new DateTimeOffset(2026, 10, 2, 12, 0, 0, TimeSpan.Zero), 4);
 
-    private sealed class FakeProfileDirectory(string? displayName) : IProfileDirectory
-    {
-        public string? ReceivedAuthorization { get; private set; }
-
-        public IReadOnlyList<string> Permissions { get; set; } =
-        [
-            "matches.create",
-            "games.typing.play",
-            "games.trivia.play",
-            "games.memory.play"
-        ];
-
-        public Task<string?> GetCurrentDisplayNameAsync(string? authorizationHeader, CancellationToken cancellationToken)
-        {
-            ReceivedAuthorization = authorizationHeader;
-            return Task.FromResult(displayName);
-        }
-
-        public Task<IReadOnlyList<string>> GetCurrentPermissionsAsync(
-            string? authorizationHeader,
-            CancellationToken cancellationToken)
-        {
-            ReceivedAuthorization = authorizationHeader;
-            return Task.FromResult(Permissions);
-        }
-    }
 }

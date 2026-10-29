@@ -1,7 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
 using BattleHub.Matchmaking.Api.Application.Matches;
-using BattleHub.Matchmaking.Api.Infrastructure.Profiles;
 using BattleHub.Matchmaking.Api.Transport.Matches;
 using BattleHub.Matchmaking.Tests.Support;
 using Microsoft.AspNetCore.Authentication;
@@ -17,10 +16,6 @@ namespace BattleHub.Matchmaking.Tests;
 
 public class MatchHistoryEndpointTests : IClassFixture<MatchHistoryEndpointTests.Factory>
 {
-    private const string TypingClient = "8BWcE4T8HxhJrxU1CtgmNkjDOpkrN4Su";
-    private const string TriviaClient = "xYhNYG9lOGLA6KvEM0Y4cccH2f7JDD5x";
-    private const string MemoryClient = "lfcBlgOCs9N0w6F6AWl4FqOs4xF9AQiN";
-
     private readonly Factory _factory;
     private readonly HttpClient _client;
 
@@ -64,18 +59,17 @@ public class MatchHistoryEndpointTests : IClassFixture<MatchHistoryEndpointTests
     }
 
     [Theory]
-    [InlineData("typing", TypingClient, 4)]
-    [InlineData("trivia", TriviaClient, 4)]
-    [InlineData("memory", MemoryClient, 2)]
+    [InlineData("typing", 4)]
+    [InlineData("trivia", 4)]
+    [InlineData("memory", 2)]
     [Trait("Category", "Integration")]
     public async Task History_AfterFinish_IsVisibleToParticipantsOnly(
         string gameType,
-        string clientId,
         int maxPlayers)
     {
         var host = $"{gameType}-host";
         var guest = $"{gameType}-guest";
-        var match = await Play(host, guest, gameType, maxPlayers, clientId);
+        var match = await Play(host, guest, gameType, maxPlayers);
 
         var hostPage = await History(host, $"gameType={gameType}");
         var guestPage = await History(guest, $"gameType={gameType}");
@@ -100,7 +94,7 @@ public class MatchHistoryEndpointTests : IClassFixture<MatchHistoryEndpointTests
     [Trait("Category", "Integration")]
     public async Task History_IgnoresARequestedUserId()
     {
-        var match = await Play("owner-a", "guest-a", "typing", 4, TypingClient);
+        var match = await Play("owner-a", "guest-a", "typing", 4);
 
         var page = await History("owner-a", "userId=guest-a");
 
@@ -126,9 +120,9 @@ public class MatchHistoryEndpointTests : IClassFixture<MatchHistoryEndpointTests
     public async Task History_IsNewestFirstAndPaged()
     {
         _factory.Store.Now = new DateTimeOffset(2026, 10, 10, 8, 0, 0, TimeSpan.Zero);
-        var older = await Play("pager", "pager-guest", "typing", 4, TypingClient);
+        var older = await Play("pager", "pager-guest", "typing", 4);
         _factory.Store.Now = _factory.Store.Now.AddHours(2);
-        var newer = await Play("pager", "pager-guest-2", "trivia", 4, TriviaClient);
+        var newer = await Play("pager", "pager-guest-2", "trivia", 4);
 
         var first = await History("pager", "page=1&pageSize=1");
         var second = await History("pager", "page=2&pageSize=1");
@@ -143,14 +137,14 @@ public class MatchHistoryEndpointTests : IClassFixture<MatchHistoryEndpointTests
     }
 
     [Theory]
-    [InlineData("typing", TypingClient, 4)]
-    [InlineData("trivia", TriviaClient, 4)]
-    [InlineData("memory", MemoryClient, 2)]
+    [InlineData("typing", 4)]
+    [InlineData("trivia", 4)]
+    [InlineData("memory", 2)]
     [Trait("Category", "Integration")]
-    public async Task History_FiltersByGameType(string gameType, string clientId, int maxPlayers)
+    public async Task History_FiltersByGameType(string gameType, int maxPlayers)
     {
         var host = $"{gameType}-filter-host";
-        await Play(host, $"{gameType}-filter-guest", gameType, maxPlayers, clientId);
+        await Play(host, $"{gameType}-filter-guest", gameType, maxPlayers);
 
         var page = await History(host, $"gameType={gameType}");
 
@@ -185,8 +179,7 @@ public class MatchHistoryEndpointTests : IClassFixture<MatchHistoryEndpointTests
         string host,
         string guest,
         string gameType,
-        int maxPlayers,
-        string clientId)
+        int maxPlayers)
     {
         var created = await Create(host, $"{gameType} history", gameType, maxPlayers);
         using var join = User(HttpMethod.Post, $"/api/matches/{created.Id}/join", guest);
@@ -195,7 +188,7 @@ public class MatchHistoryEndpointTests : IClassFixture<MatchHistoryEndpointTests
         using var start = User(HttpMethod.Post, $"/api/matches/{created.Id}/start", host);
         using var startResponse = await _client.SendAsync(start);
         Assert.Equal(HttpStatusCode.OK, startResponse.StatusCode);
-        using var finish = Machine($"/api/matches/{created.Id}/finish", clientId);
+        using var finish = User(HttpMethod.Post, $"/api/matches/{created.Id}/finish", host);
         using var finishResponse = await _client.SendAsync(finish);
         Assert.Equal(HttpStatusCode.NoContent, finishResponse.StatusCode);
         return created;
@@ -230,16 +223,6 @@ public class MatchHistoryEndpointTests : IClassFixture<MatchHistoryEndpointTests
     {
         var request = new HttpRequestMessage(method, path);
         request.Headers.Add(TestAuthHandler.NameIdentifierHeader, userId);
-        return request;
-    }
-
-    private static HttpRequestMessage Machine(string path, string clientId)
-    {
-        var request = new HttpRequestMessage(HttpMethod.Post, path);
-        request.Headers.Add(TestAuthHandler.SubHeader, $"{clientId}@clients");
-        request.Headers.Add(TestAuthHandler.GtyHeader, "client-credentials");
-        request.Headers.Add(TestAuthHandler.AzpHeader, clientId);
-        request.Headers.Add(TestAuthHandler.ScopeHeader, "matches.finish");
         return request;
     }
 
@@ -280,8 +263,6 @@ public class MatchHistoryEndpointTests : IClassFixture<MatchHistoryEndpointTests
                     })
                     .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>(
                         TestAuthHandler.AuthenticationScheme, _ => { });
-                services.RemoveAll<IProfileDirectory>();
-                services.AddSingleton<IProfileDirectory>(new GrantingProfileDirectory());
                 services.RemoveAll<IMatchStore>();
                 services.AddSingleton<IMatchStore>(Store);
                 services.RemoveAll<IMatchHistoryStore>();

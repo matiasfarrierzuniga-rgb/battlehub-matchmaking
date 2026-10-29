@@ -36,12 +36,10 @@ public class MatchCapacityTests
     [InlineData(4)]
     [InlineData(10)]
     [Trait("Category", "Unit")]
-    public void Constructor_MemoryWithoutExactlyTwoPlayers_IsRejected(int requestedMaxPlayers)
+    public void Constructor_MemoryUsesGenericCapacity(int requestedMaxPlayers)
     {
-        var error = Assert.Throws<ArgumentException>(() =>
-            new Match("match-1", "Friday match", "memory", OwnerId, CreatedAt, requestedMaxPlayers));
-
-        Assert.Equal("Memory requires exactly 2 players.", error.Message);
+        var match = new Match("match-1", "Friday match", "memory", OwnerId, CreatedAt, requestedMaxPlayers);
+        Assert.Equal(requestedMaxPlayers, match.MaxPlayers);
     }
 
     [Fact]
@@ -64,30 +62,6 @@ public class MatchCapacityTests
 
     [Fact]
     [Trait("Category", "Unit")]
-    public void Rehydrate_MemoryWithoutExactlyTwoPlayers_IsRejected()
-    {
-        var participants = new[]
-        {
-            new MatchParticipant("user-1", CreatedAt, CreatedAt),
-            new MatchParticipant("user-2", CreatedAt, CreatedAt)
-        };
-
-        var error = Assert.Throws<ArgumentException>(() => Match.Rehydrate(
-            "match-1",
-            "Friday match",
-            "memory",
-            OwnerId,
-            CreatedAt,
-            CreatedAt,
-            10,
-            MatchStatus.Waiting,
-            participants));
-
-        Assert.Equal("Memory requires exactly 2 players.", error.Message);
-    }
-
-    [Fact]
-    [Trait("Category", "Unit")]
     public void Rehydrate_MemoryWithMoreParticipantsThanCap_IsRejected()
     {
         var participants = new[]
@@ -104,7 +78,7 @@ public class MatchCapacityTests
             OwnerId,
             CreatedAt,
             CreatedAt,
-            10,
+            2,
             MatchStatus.Waiting,
             participants));
     }

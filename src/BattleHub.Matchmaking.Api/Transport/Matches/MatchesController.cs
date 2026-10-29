@@ -2,7 +2,6 @@ using System.Security.Claims;
 using BattleHub.Matchmaking.Api.Application.Matches;
 using BattleHub.Matchmaking.Api.Configuration;
 using BattleHub.Matchmaking.Api.Domain.Matches;
-using BattleHub.Matchmaking.Api.Infrastructure.Profiles;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Authorization;
 
@@ -12,8 +11,7 @@ namespace BattleHub.Matchmaking.Api.Transport.Matches;
 [Route("api/matches")]
 public sealed class MatchesController(
     MatchService matchService,
-    IMatchHistoryStore history,
-    IProfileDirectory? profiles = null) : ControllerBase
+    IMatchHistoryStore history) : ControllerBase
 {
     [HttpPost]
     [Authorize(Policy = MatchAuthorization.UserPolicy)]
@@ -27,12 +25,12 @@ public sealed class MatchesController(
             return Unauthorized();
         }
 
-        await EnsureCanCreateAsync(request.GameType, request.MaxPlayers, cancellationToken);
+        var gameType = MatchHistory.NormalizeGameType(request.GameType ?? string.Empty)!;
         var match = await matchService.CreateAsync(
-            new CreateMatchCommand(request.Title, request.GameType, request.MaxPlayers),
+            new CreateMatchCommand(request.Title, gameType, request.MaxPlayers),
             userId,
             cancellationToken,
-            await GetDisplayNameAsync(cancellationToken));
+            User.FindFirstValue("name"));
 
         return CreatedAtAction(nameof(Get), new { matchId = match.Id }, match.ToResponse());
     }
@@ -117,13 +115,11 @@ public sealed class MatchesController(
             return Unauthorized();
         }
 
-        var existing = await matchService.GetAsync(matchId, cancellationToken);
-        await EnsureCanPlayAsync(existing.GameType, cancellationToken);
         var match = await matchService.JoinAsync(
             matchId,
             userId,
             cancellationToken,
-            await GetDisplayNameAsync(cancellationToken));
+            User.FindFirstValue("name"));
         return Ok(match.ToResponse());
     }
 
@@ -152,62 +148,5 @@ public sealed class MatchesController(
             : Ok((await action(userId, cancellationToken)).ToResponse());
     }
 
-    private async Task EnsureCanCreateAsync(
-        string gameType,
-        int maxPlayers,
-        CancellationToken cancellationToken)
-    {
-        var playPermission = RequirePlayPermission(gameType);
-        GameCapacity.Ensure(gameType, maxPlayers);
-        var granted = await GrantedPermissionsAsync(cancellationToken);
-        if (!granted.Contains(SupportedGames.CreatePermission) || !granted.Contains(playPermission))
-        {
-            throw new UnauthorizedAccessException("The user is not allowed to create this match.");
-        }
-    }
-
-    private async Task EnsureCanPlayAsync(string gameType, CancellationToken cancellationToken)
-    {
-        var playPermission = RequirePlayPermission(gameType);
-        var granted = await GrantedPermissionsAsync(cancellationToken);
-        if (!granted.Contains(playPermission))
-        {
-            throw new UnauthorizedAccessException("The user is not allowed to join this match.");
-        }
-    }
-
-    private static string RequirePlayPermission(string gameType)
-    {
-        if (!SupportedGames.TryGetPlayPermission(gameType, out var playPermission))
-        {
-            throw new ArgumentException(
-                string.IsNullOrWhiteSpace(gameType)
-                    ? "Game type is required."
-                    : $"'{gameType}' is not a supported game type.");
-        }
-
-        return playPermission;
-    }
-
-    private async Task<HashSet<string>> GrantedPermissionsAsync(CancellationToken cancellationToken)
-    {
-        if (profiles is null)
-        {
-            throw new ProfileUnavailableException();
-        }
-
-        var permissions = await profiles.GetCurrentPermissionsAsync(
-            Request.Headers.Authorization.ToString(),
-            cancellationToken);
-        return new HashSet<string>(permissions, StringComparer.Ordinal);
-    }
-
     private string? GetUserId() => MatchAuthorization.UserId(User);
-
-    // Profile Service es la fuente del nombre visible; el claim "name" solo es un respaldo.
-    private async Task<string?> GetDisplayNameAsync(CancellationToken cancellationToken) =>
-        (profiles is null
-            ? null
-            : await profiles.GetCurrentDisplayNameAsync(Request.Headers.Authorization.ToString(), cancellationToken))
-        ?? HttpContext?.User.FindFirstValue("name");
 }

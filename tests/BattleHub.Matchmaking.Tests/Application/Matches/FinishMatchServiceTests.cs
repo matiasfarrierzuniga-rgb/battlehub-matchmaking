@@ -16,8 +16,8 @@ public class FinishMatchServiceTests
     {
         var (service, store, publisher) = Setup(Started("typing"));
 
-        var first = await service.FinishAsync("match-1", "typing-client", default);
-        var second = await service.FinishAsync("match-1", "typing-client", default);
+        var first = await service.FinishAsync("match-1", "owner-1", default);
+        var second = await service.FinishAsync("match-1", "owner-1", default);
 
         Assert.Equal(MatchStatus.Finished, first.Status);
         Assert.Equal(MatchStatus.Finished, second.Status);
@@ -33,8 +33,8 @@ public class FinishMatchServiceTests
         store.GateFirstTwoReads = true;
 
         await Task.WhenAll(
-            service.FinishAsync("match-1", "typing-client", default),
-            service.FinishAsync("match-1", "typing-client", default));
+            service.FinishAsync("match-1", "owner-1", default),
+            service.FinishAsync("match-1", "owner-1", default));
 
         Assert.Equal(MatchStatus.Finished, store.Current.Status);
         Assert.Equal(1, store.SuccessfulReplaces);
@@ -51,7 +51,7 @@ public class FinishMatchServiceTests
         var (service, store, publisher) = Setup(WithStatus("typing", status));
 
         await Assert.ThrowsAsync<InvalidMatchTransitionException>(
-            () => service.FinishAsync("match-1", "typing-client", default));
+            () => service.FinishAsync("match-1", "owner-1", default));
 
         Assert.Equal(0, store.ReplaceCalls);
         Assert.Empty(publisher.Events);
@@ -63,51 +63,29 @@ public class FinishMatchServiceTests
     {
         var (service, _, _) = Setup(null);
         await Assert.ThrowsAsync<MatchNotFoundException>(
-            () => service.FinishAsync("missing", "typing-client", default));
+            () => service.FinishAsync("missing", "owner-1", default));
     }
 
     [Theory]
-    [InlineData("typing", "trivia-client")]
-    [InlineData("trivia", "typing-client")]
-    [InlineData("memory", "typing-client")]
-    [InlineData("typing", "unknown-client")]
-    [InlineData("trivia", "unknown-client")]
-    [InlineData("memory", "unknown-client")]
+    [InlineData("owner-1")]
+    [InlineData("user-2")]
     [Trait("Category", "Unit")]
-    public async Task ClientForDifferentGameType_IsRejected(string gameType, string clientId)
+    public async Task Participant_CanFinish(string userId)
     {
-        var (service, store, publisher) = Setup(Started(gameType));
-
-        await Assert.ThrowsAsync<UnauthorizedAccessException>(
-            () => service.FinishAsync("match-1", clientId, default));
-
-        Assert.Equal(0, store.ReplaceCalls);
-        Assert.Empty(publisher.Events);
+        var (service, _, _) = Setup(Started("memory"));
+        Assert.Equal(MatchStatus.Finished, (await service.FinishAsync("match-1", userId, default)).Status);
     }
 
-    [Fact]
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
     [Trait("Category", "Unit")]
-    public async Task MemoryClient_CanFinishMemoryMatch()
-    {
-        var (service, store, publisher) = Setup(Started("Memory"));
-
-        var result = await service.FinishAsync("match-1", "memory-client", default);
-
-        Assert.Equal(MatchStatus.Finished, result.Status);
-        Assert.Equal(1, store.ReplaceCalls);
-        Assert.Equal(MatchEventNames.MatchFinished, Assert.Single(publisher.Events));
-    }
-
-    [Fact]
-    [Trait("Category", "Unit")]
-    public async Task UnauthorizedClient_IsRejectedEvenWhenAlreadyFinished()
+    public async Task Outsider_IsRejected(bool finished)
     {
         var match = Started("typing");
-        match.Finish(CreatedAt.AddMinutes(2));
+        if (finished) match.Finish(CreatedAt.AddMinutes(3));
         var (service, _, _) = Setup(match);
-
-        await Assert.ThrowsAsync<UnauthorizedAccessException>(
-            () => service.FinishAsync("match-1", "trivia-client", default));
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => service.FinishAsync("match-1", "outsider", default));
     }
 
     [Fact]
@@ -117,7 +95,7 @@ public class FinishMatchServiceTests
         var (service, store, publisher) = Setup(Started("typing"), CreatedAt.AddHours(2));
 
         await Assert.ThrowsAsync<InvalidMatchTransitionException>(
-            () => service.FinishAsync("match-1", "typing-client", default));
+            () => service.FinishAsync("match-1", "owner-1", default));
 
         Assert.Equal(0, store.ReplaceCalls);
         Assert.Empty(publisher.Events);
@@ -131,7 +109,7 @@ public class FinishMatchServiceTests
         var previousActivity = match.LastActivityAt;
         var (service, _, _) = Setup(match, CreatedAt);
 
-        var result = await service.FinishAsync("match-1", "typing-client", default);
+        var result = await service.FinishAsync("match-1", "owner-1", default);
 
         Assert.Equal(previousActivity, result.LastActivityAt);
     }
@@ -144,7 +122,7 @@ public class FinishMatchServiceTests
         store.AlwaysConflict = true;
 
         await Assert.ThrowsAsync<MatchConcurrencyException>(
-            () => service.FinishAsync("match-1", "typing-client", default));
+            () => service.FinishAsync("match-1", "owner-1", default));
 
         Assert.Equal(5, store.ReplaceCalls);
         Assert.Empty(publisher.Events);
@@ -160,15 +138,6 @@ public class FinishMatchServiceTests
             store,
             publisher,
             new MemoryMatchHistoryStore(),
-            Options.Create(new GameServiceOptions
-            {
-                Clients = new Dictionary<string, string>
-                {
-                    ["typing-client"] = "typing",
-                    ["trivia-client"] = "trivia",
-                    ["memory-client"] = "memory"
-                }
-            }),
             Options.Create(new CleanupOptions { ExpirationSeconds = 7200 }));
         return (service, store, publisher);
     }
@@ -179,6 +148,7 @@ public class FinishMatchServiceTests
     {
         var maxPlayers = string.Equals(gameType, "memory", StringComparison.OrdinalIgnoreCase) ? 2 : 4;
         var match = new Match("match-1", "Friday", gameType, "owner-1", CreatedAt, maxPlayers);
+        if (status == MatchStatus.Waiting) match.JoinParticipant("owner-1", CreatedAt);
         if (status is MatchStatus.Starting or MatchStatus.Started or MatchStatus.Cancelled)
         {
             match.JoinParticipant("owner-1", CreatedAt);
@@ -270,5 +240,5 @@ public class FinishMatchServiceTests
             p.UserId,
             p.JoinedAt,
             p.LastHeartbeatAt,
-            p.DisplayName)));
+            p.DisplayName)), match.StartedAt, match.FinishedAt, match.CancelledAt);
 }

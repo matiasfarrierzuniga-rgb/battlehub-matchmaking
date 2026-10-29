@@ -4,7 +4,6 @@ using BattleHub.Matchmaking.Api.Application.Matches;
 using BattleHub.Matchmaking.Api.Application.Matches.Cleanup;
 using BattleHub.Matchmaking.Api.Configuration;
 using BattleHub.Matchmaking.Api.Domain.Matches;
-using BattleHub.Matchmaking.Api.Infrastructure.Profiles;
 using BattleHub.Matchmaking.Api.Transport.Matches;
 using BattleHub.Matchmaking.Tests.Support;
 using Microsoft.AspNetCore.Hosting;
@@ -184,51 +183,18 @@ public class MatchesEndpointIntegrationTests : IClassFixture<MatchesEndpointInte
 
     [Fact]
     [Trait("Category", "Integration")]
-    public async Task Finish_WithNormalUser_ReturnsForbidden()
+    public async Task Finish_ParticipantIsIdempotentAndOutsiderForbidden()
     {
-        using var request = new HttpRequestMessage(HttpMethod.Post, "/api/matches/typing-started/finish");
-        request.Headers.Add(TestAuthHandler.SubHeader, "user-1");
-
-        using var response = await _client.SendAsync(request);
-        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
-    }
-
-    [Fact]
-    [Trait("Category", "Integration")]
-    public async Task Finish_WithMachineMissingPermission_ReturnsForbidden()
-    {
-        using var response = await SendAsMachine("/api/matches/typing-started/finish", "matches.create");
-        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
-    }
-
-    [Fact]
-    [Trait("Category", "Integration")]
-    public async Task Finish_WithAuthorizedMachine_IsIdempotent()
-    {
-        using var first = await SendAsMachine("/api/matches/typing-started/finish", "matches.finish");
-        using var second = await SendAsMachine("/api/matches/typing-started/finish", "matches.finish");
-
+        using var outsider = await _client.SendAsync(Authenticated(HttpMethod.Post, "/api/matches/typing-started/finish", "outsider"));
+        Assert.Equal(HttpStatusCode.Forbidden, outsider.StatusCode);
+        using var first = await _client.SendAsync(Authenticated(HttpMethod.Post, "/api/matches/typing-started/finish", "player-2"));
+        using var second = await _client.SendAsync(Authenticated(HttpMethod.Post, "/api/matches/typing-started/finish", "player-2"));
         Assert.Equal(HttpStatusCode.NoContent, first.StatusCode);
         Assert.Equal(HttpStatusCode.NoContent, second.StatusCode);
-    }
-
-    [Fact]
-    [Trait("Category", "Integration")]
-    public async Task Finish_WithMachineForDifferentGame_ReturnsForbidden()
-    {
-        using var response = await SendAsMachine("/api/matches/trivia-started/finish", "matches.finish");
-        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
-    }
-
-    [Fact]
-    [Trait("Category", "Integration")]
-    public async Task ValidFinishMachine_CannotCreateUserMatch()
-    {
-        using var request = MachineRequest(HttpMethod.Post, "/api/matches", "matches.finish");
-        request.Content = JsonContent.Create(new { title = "Forbidden", gameType = "typing", maxPlayers = 4 });
-
-        using var response = await _client.SendAsync(request);
-        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        using var detail = await _client.SendAsync(Authenticated(HttpMethod.Get, "/api/matches/typing-started", "player-2"));
+        Assert.Equal("Finished", (await detail.Content.ReadFromJsonAsync<MatchResponse>())!.Status);
+        using var rejected = await _client.SendAsync(Authenticated(HttpMethod.Post, "/api/matches/typing-started/finish", "outsider"));
+        Assert.Equal(HttpStatusCode.Forbidden, rejected.StatusCode);
     }
 
     [Fact]
@@ -265,18 +231,6 @@ public class MatchesEndpointIntegrationTests : IClassFixture<MatchesEndpointInte
 
     [Fact]
     [Trait("Category", "Integration")]
-    public void GameServiceClients_ResolveTypingTriviaAndMemory()
-    {
-        var clients = _factory.Services.GetRequiredService<IOptions<GameServiceOptions>>().Value.Clients;
-
-        Assert.Equal("typing", clients["8BWcE4T8HxhJrxU1CtgmNkjDOpkrN4Su"]);
-        Assert.Equal("trivia", clients["xYhNYG9lOGLA6KvEM0Y4cccH2f7JDD5x"]);
-        Assert.Equal("memory", clients["lfcBlgOCs9N0w6F6AWl4FqOs4xF9AQiN"]);
-        Assert.False(clients.ContainsKey("unknown-client"));
-    }
-
-    [Fact]
-    [Trait("Category", "Integration")]
     public async Task PostMemoryMatch_WithTwoPlayers_IsCreated()
     {
         var created = await CreateAuthenticatedMatch("memory-owner-2", "Memory room", "memory", 2);
@@ -292,7 +246,7 @@ public class MatchesEndpointIntegrationTests : IClassFixture<MatchesEndpointInte
     [InlineData(4)]
     [InlineData(10)]
     [Trait("Category", "Integration")]
-    public async Task PostMemoryMatch_WithoutExactlyTwoPlayers_IsBadRequest(int requestedMaxPlayers)
+    public async Task PostMemoryMatch_UsesGenericCapacity(int requestedMaxPlayers)
     {
         using var request = new HttpRequestMessage(HttpMethod.Post, "/api/matches")
         {
@@ -306,10 +260,8 @@ public class MatchesEndpointIntegrationTests : IClassFixture<MatchesEndpointInte
         request.Headers.Add(TestAuthHandler.NameIdentifierHeader, "memory-owner");
 
         using var response = await _client.SendAsync(request);
-        var body = await response.Content.ReadAsStringAsync();
-
-        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-        Assert.Contains("Memory requires exactly 2 players.", body);
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        Assert.Equal(requestedMaxPlayers, (await response.Content.ReadFromJsonAsync<MatchResponse>())!.MaxPlayers);
     }
 
     [Theory]
@@ -372,7 +324,7 @@ public class MatchesEndpointIntegrationTests : IClassFixture<MatchesEndpointInte
 
     [Fact]
     [Trait("Category", "Integration")]
-    public async Task Finish_WithConfiguredMemoryClient_SucceedsOnlyForMemory()
+    public async Task Finish_MemoryParticipant_Succeeds()
     {
         var created = await CreateAuthenticatedMatch("memory-finish-owner", "Finish memory", "memory", 2);
         using var join = new HttpRequestMessage(HttpMethod.Post, $"/api/matches/{created.Id}/join");
@@ -384,47 +336,11 @@ public class MatchesEndpointIntegrationTests : IClassFixture<MatchesEndpointInte
         using var startResponse = await _client.SendAsync(start);
         Assert.Equal(HttpStatusCode.OK, startResponse.StatusCode);
 
-        using var memoryFinish = await _client.SendAsync(MachineRequest(
-            HttpMethod.Post,
-            $"/api/matches/{created.Id}/finish",
-            "matches.finish",
-            "lfcBlgOCs9N0w6F6AWl4FqOs4xF9AQiN"));
-        using var typingOnMemory = await _client.SendAsync(MachineRequest(
-            HttpMethod.Post,
-            $"/api/matches/{created.Id}/finish",
-            "matches.finish",
-            "8BWcE4T8HxhJrxU1CtgmNkjDOpkrN4Su"));
+        using var memoryFinish = await _client.SendAsync(Authenticated(HttpMethod.Post, $"/api/matches/{created.Id}/finish", "memory-finish-player"));
+        using var outsider = await _client.SendAsync(Authenticated(HttpMethod.Post, $"/api/matches/{created.Id}/finish", "outsider"));
 
         Assert.Equal(HttpStatusCode.NoContent, memoryFinish.StatusCode);
-        Assert.Equal(HttpStatusCode.Forbidden, typingOnMemory.StatusCode);
-    }
-
-    [Theory]
-    [InlineData("typing-started", "8BWcE4T8HxhJrxU1CtgmNkjDOpkrN4Su")]
-    [InlineData("trivia-started", "xYhNYG9lOGLA6KvEM0Y4cccH2f7JDD5x")]
-    [Trait("Category", "Integration")]
-    public async Task Finish_WithConfiguredGameClient_Succeeds(string matchId, string clientId)
-    {
-        using var response = await _client.SendAsync(MachineRequest(
-            HttpMethod.Post,
-            $"/api/matches/{matchId}/finish",
-            "matches.finish",
-            clientId));
-
-        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
-    }
-
-    [Fact]
-    [Trait("Category", "Integration")]
-    public async Task Finish_WithUnknownClient_ReturnsForbidden()
-    {
-        using var response = await _client.SendAsync(MachineRequest(
-            HttpMethod.Post,
-            "/api/matches/typing-started/finish",
-            "matches.finish",
-            "unknown-client"));
-
-        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, outsider.StatusCode);
     }
 
     [Theory]
@@ -519,23 +435,6 @@ public class MatchesEndpointIntegrationTests : IClassFixture<MatchesEndpointInte
         return (await response.Content.ReadFromJsonAsync<MatchResponse>())!;
     }
 
-    private async Task<HttpResponseMessage> SendAsMachine(string path, string scope) =>
-        await _client.SendAsync(MachineRequest(HttpMethod.Post, path, scope));
-
-    private static HttpRequestMessage MachineRequest(
-        HttpMethod method,
-        string path,
-        string scope,
-        string clientId = "typing-client")
-    {
-        var request = new HttpRequestMessage(method, path);
-        request.Headers.Add(TestAuthHandler.SubHeader, $"{clientId}@clients");
-        request.Headers.Add(TestAuthHandler.GtyHeader, "client-credentials");
-        request.Headers.Add(TestAuthHandler.AzpHeader, clientId);
-        request.Headers.Add(TestAuthHandler.ScopeHeader, scope);
-        return request;
-    }
-
     public sealed class Factory : WebApplicationFactory<Program>
     {
         protected override void ConfigureWebHost(IWebHostBuilder builder)
@@ -547,7 +446,6 @@ public class MatchesEndpointIntegrationTests : IClassFixture<MatchesEndpointInte
                     ["Cleanup:Enabled"] = "false",
                     ["Auth0:Domain"] = "test.auth0.invalid",
                     ["Auth0:Audience"] = "test-matchmaking-api",
-                    ["GameServices:Clients:typing-client"] = "typing"
                 }));
 
             builder.ConfigureTestServices(services =>
@@ -559,8 +457,6 @@ public class MatchesEndpointIntegrationTests : IClassFixture<MatchesEndpointInte
                     })
                     .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>(
                         TestAuthHandler.AuthenticationScheme, _ => { });
-                services.RemoveAll<IProfileDirectory>();
-                services.AddSingleton<IProfileDirectory>(new GrantingProfileDirectory());
                 services.RemoveAll<IMatchHistoryStore>();
                 services.AddSingleton<IMatchHistoryStore>(new MemoryMatchHistoryStore());
                 services.RemoveAll<IMatchStore>();

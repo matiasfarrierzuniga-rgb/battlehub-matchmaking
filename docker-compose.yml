@@ -21,7 +21,6 @@ services:
       Auth0__Audience: ${AUTH0_AUDIENCE}
       MongoDb__ConnectionString: mongodb://mongodb:27017
       MongoDb__DatabaseName: battlehub_matchmaking
-      Profile__BaseUrl: ${PROFILE_BASE_URL:-http://host.docker.internal:5220}
       Cors__Origins__0: http://localhost:4000
     depends_on:
       mongodb:

@@ -10,16 +10,16 @@ namespace BattleHub.Matchmaking.Api.Transport.Matches;
 public sealed class MatchFinishController(FinishMatchService finishMatchService) : ControllerBase
 {
     [HttpPost("{matchId}/finish")]
-    [Authorize(Policy = MatchAuthorization.FinishPolicy)]
+    [Authorize(Policy = MatchAuthorization.UserPolicy)]
     public async Task<IActionResult> Finish(string matchId, CancellationToken cancellationToken)
     {
-        var clientId = MatchAuthorization.MachineClientId(User);
-        if (clientId is null)
+        var userId = MatchAuthorization.UserId(User);
+        if (userId is null)
         {
-            return Forbid();
+            return Unauthorized();
         }
 
-        await finishMatchService.FinishAsync(matchId, clientId, cancellationToken);
+        await finishMatchService.FinishAsync(matchId, userId, cancellationToken);
         return NoContent();
     }
 }

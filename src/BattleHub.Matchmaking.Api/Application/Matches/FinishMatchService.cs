@@ -8,18 +8,17 @@ public sealed class FinishMatchService(
     IMatchStore store,
     IMatchEventPublisher eventPublisher,
     IMatchHistoryStore history,
-    IOptions<GameServiceOptions> gameServices,
     IOptions<CleanupOptions> cleanup)
 {
     private const int MaxConcurrencyAttempts = 5;
 
     public async Task<Match> FinishAsync(
         string matchId,
-        string clientId,
+        string userId,
         CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(matchId);
-        ArgumentException.ThrowIfNullOrWhiteSpace(clientId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(userId);
 
         for (var attempt = 0; attempt < MaxConcurrencyAttempts; attempt++)
         {
@@ -27,11 +26,10 @@ public sealed class FinishMatchService(
                 ?? throw new MatchNotFoundException(matchId);
             var match = stored.Match;
 
-            if (!gameServices.Value.Clients.TryGetValue(clientId, out var authorizedGameType)
-                || !string.Equals(authorizedGameType, match.GameType, StringComparison.OrdinalIgnoreCase))
+            if (!match.Participants.Any(participant =>
+                    string.Equals(participant.UserId, userId, StringComparison.Ordinal)))
             {
-                throw new UnauthorizedAccessException(
-                    "The game service is not authorized to finish this match type.");
+                throw new UnauthorizedAccessException("Only a match participant can finish it.");
             }
 
             if (match.Status == MatchStatus.Finished)

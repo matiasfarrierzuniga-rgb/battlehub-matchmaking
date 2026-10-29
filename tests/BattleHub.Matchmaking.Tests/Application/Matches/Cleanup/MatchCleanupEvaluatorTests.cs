@@ -8,6 +8,22 @@ public class MatchCleanupEvaluatorTests
     private static readonly DateTimeOffset CreatedAt = new(2026, 10, 1, 12, 0, 0, TimeSpan.Zero);
     private static readonly DateTimeOffset Cutoff = CreatedAt.AddMinutes(10);
 
+    [Theory]
+    [InlineData(-1, true)]
+    [InlineData(0, true)]
+    [InlineData(1, false)]
+    [Trait("Category", "Unit")]
+    public void Cutoffs_AreInclusive(long ticks, bool expired)
+    {
+        var instant = Cutoff.AddTicks(ticks);
+        Assert.Equal(expired, MatchCleanupEvaluator.IsInactiveWaiting(CreateMatch(MatchStatus.Waiting, instant), Cutoff));
+        Assert.Equal(expired, MatchCleanupEvaluator.HasNoValidHeartbeat(CreateMatch(participants: [Participant("user", instant)]), Cutoff));
+        var created = Match.Rehydrate("m", "title", "typing", "owner", instant, instant, 2, MatchStatus.Started, []);
+        Assert.Equal(expired, MatchCleanupEvaluator.IsExpired(created, Cutoff));
+        Assert.Equal(expired, MatchCleanupEvaluator.IsTerminalRetentionExpired(CreateMatch(MatchStatus.Finished, instant), Cutoff));
+        Assert.Equal(expired, MatchCleanupEvaluator.IsTerminalRetentionExpired(CreateMatch(MatchStatus.Cancelled, instant), Cutoff));
+    }
+
     [Fact]
     [Trait("Category", "Unit")]
     public void IsInactiveWaiting_AtCutoff_ReturnsTrue() =>
