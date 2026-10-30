@@ -1,0 +1,13 @@
+<RunSettings>
+  <DataCollectionRunSettings>
+    <DataCollectors>
+      <DataCollector friendlyName="XPlat Code Coverage">
+        <Configuration>
+          <Include>[BattleHub.Matchmaking.Api]*</Include>
+          <ExcludeByFile>**/*.generated.cs</ExcludeByFile>
+          <Format>cobertura</Format>
+        </Configuration>
+      </DataCollector>
+    </DataCollectors>
+  </DataCollectionRunSettings>
+</RunSettings>

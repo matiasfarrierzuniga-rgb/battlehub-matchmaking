@@ -60,6 +60,8 @@ public sealed class MongoMatchCleanupStore(
             return false;
         }
 
+        // Repair a missing history record before deleting a terminal match.
+        await history.RecordAsync(stored.Match, cancellationToken);
         var result = await context.Matches.DeleteOneAsync(
             MongoMatchCleanupOperations.BuildTerminalRetentionFilter(stored, retentionCutoff),
             cancellationToken);

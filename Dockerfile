@@ -4,6 +4,7 @@
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 
+COPY Directory.Build.props ./
 COPY src/BattleHub.Matchmaking.Api/BattleHub.Matchmaking.Api.csproj src/BattleHub.Matchmaking.Api/
 RUN dotnet restore src/BattleHub.Matchmaking.Api/BattleHub.Matchmaking.Api.csproj
 
@@ -28,7 +29,7 @@ USER $APP_UID
 ENV ASPNETCORE_HTTP_PORTS=8080
 EXPOSE 8080
 
-HEALTHCHECK --interval=10s --timeout=3s --start-period=20s --retries=5 \
+HEALTHCHECK --interval=10s --timeout=10s --start-period=60s --retries=5 \
     CMD curl --fail --silent http://localhost:8080/health || exit 1
 
 ENTRYPOINT ["dotnet", "BattleHub.Matchmaking.Api.dll"]
