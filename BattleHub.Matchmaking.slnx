@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/BattleHub.Matchmaking.Api/BattleHub.Matchmaking.Api.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/BattleHub.Matchmaking.UnitTests/BattleHub.Matchmaking.UnitTests.csproj" />
+    <Project Path="tests/BattleHub.Matchmaking.IntegrationTests/BattleHub.Matchmaking.IntegrationTests.csproj" />
+  </Folder>
+</Solution>

@@ -5,6 +5,15 @@ namespace BattleHub.Matchmaking.Tests.Configuration;
 
 public class Auth0AuthenticationTests
 {
+    [Fact]
+    public void GetSignalRAccessToken_EmptyTokenIsIgnored()
+    {
+        var request = new DefaultHttpContext().Request;
+        request.Path = "/hubs/lobby";
+        request.QueryString = new QueryString("?access_token=%20");
+        Assert.Null(Auth0Authentication.GetSignalRAccessToken(request));
+    }
+
     [Theory]
     [InlineData("tenant.auth0.com", "https://tenant.auth0.com/")]
     [InlineData("https://tenant.auth0.com", "https://tenant.auth0.com/")]

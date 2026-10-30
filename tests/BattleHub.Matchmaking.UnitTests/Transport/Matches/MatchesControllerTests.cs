@@ -13,6 +13,39 @@ public class MatchesControllerTests
     private const string OwnerId = "owner-1";
 
     [Fact]
+    public async Task Create_EmptyGameTypeIsRejected()
+    {
+        var (controller, _) = CreateController(OwnerId);
+        var error = await Assert.ThrowsAsync<ArgumentException>(() => controller.Create(new("Friday", null!, 4), default));
+        Assert.Equal("Game type is required.", error.Message);
+    }
+
+    [Fact]
+    public async Task History_WithoutUserReturnsUnauthorized()
+    {
+        var (controller, _) = CreateController();
+        var result = await controller.History(null);
+        Assert.IsType<UnauthorizedResult>(result.Result);
+    }
+
+    [Fact]
+    public async Task History_ExplicitEmptyGameTypeIsRejected()
+    {
+        var (controller, _) = CreateController(OwnerId);
+        controller.HttpContext.Request.QueryString = new QueryString("?gameType=");
+        var error = await Assert.ThrowsAsync<ArgumentException>(() => controller.History(""));
+        Assert.Equal("Game type is required.", error.Message);
+    }
+
+    [Fact]
+    public async Task List_NumericUndefinedStatusReturnsBadRequest()
+    {
+        var (controller, _) = CreateController();
+        var result = await controller.List(null, "999", default);
+        Assert.Equal(StatusCodes.Status400BadRequest, Assert.IsType<ObjectResult>(result.Result).StatusCode);
+    }
+
+    [Fact]
     [Trait("Category", "Unit")]
     public async Task Create_WithoutUser_ReturnsUnauthorized()
     {

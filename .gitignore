@@ -10,6 +10,7 @@ obj/
 
 # Test output
 TestResults/
+.tools/
 *.trx
 
 # Local environment and application settings

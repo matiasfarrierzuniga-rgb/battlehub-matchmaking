@@ -135,9 +135,24 @@ La primera llamada válida cambia `Started` a `Finished`, emite `MatchFinished` 
 ## Pruebas
 
 ```powershell
-dotnet test tests/BattleHub.Matchmaking.Tests/BattleHub.Matchmaking.Tests.csproj --filter "Category=Unit"
-dotnet test tests/BattleHub.Matchmaking.Tests/BattleHub.Matchmaking.Tests.csproj --filter "Category=Integration"
-dotnet test tests/BattleHub.Matchmaking.Tests/BattleHub.Matchmaking.Tests.csproj --filter "Category=Mongo"
+dotnet restore BattleHub.Matchmaking.slnx
+dotnet build BattleHub.Matchmaking.slnx --no-restore
+dotnet format BattleHub.Matchmaking.slnx --verify-no-changes --no-restore
+dotnet test tests/BattleHub.Matchmaking.UnitTests/BattleHub.Matchmaking.UnitTests.csproj
+dotnet test tests/BattleHub.Matchmaking.IntegrationTests/BattleHub.Matchmaking.IntegrationTests.csproj
 ```
 
-`Category=Mongo` usa MongoDB real en `mongodb://localhost:27017` y la base `battlehub_matchmaking_itest`, que se borra al terminar. No sustituye el almacén por una implementación en memoria. Si MongoDB no está levantado, esa prueba falla. El pipeline de GitHub Actions levanta MongoDB 7 para ejecutarla.
+Las pruebas Mongo usan MongoDB real en `mongodb://localhost:27017` y la base `battlehub_matchmaking_itest`, que se borra al terminar. Si MongoDB no está levantado, fallan. CI levanta MongoDB 7 y ejecuta ambos proyectos, lint, cobertura y `docker build .`. El workflow adicional ejecuta build y unitarias.
+
+Para reproducir la cobertura combinada de CI, con Python 3 y MongoDB disponibles:
+Usa un directorio `TestResults` vacío para no mezclar ejecuciones anteriores.
+
+```powershell
+dotnet test tests/BattleHub.Matchmaking.UnitTests/BattleHub.Matchmaking.UnitTests.csproj --collect:"XPlat Code Coverage" --settings coverage.runsettings --results-directory TestResults/unit
+dotnet test tests/BattleHub.Matchmaking.IntegrationTests/BattleHub.Matchmaking.IntegrationTests.csproj --collect:"XPlat Code Coverage" --settings coverage.runsettings --results-directory TestResults/integration
+dotnet tool install --global dotnet-reportgenerator-globaltool --version 5.5.1
+reportgenerator '-reports:TestResults/**/coverage.cobertura.xml' '-targetdir:TestResults/report' '-reporttypes:Cobertura;Html' '-filefilters:-**/*.generated.cs'
+python scripts/coverage-summary.py TestResults/report/Cobertura.xml TestResults/coverage-summary.md
+```
+
+El reporte HTML queda en `TestResults/report`; el último comando falla si la cobertura de líneas o de ramas es inferior al 85 %.

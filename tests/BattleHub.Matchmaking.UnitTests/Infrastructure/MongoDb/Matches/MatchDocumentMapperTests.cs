@@ -251,25 +251,25 @@ public class MatchDocumentMapperTests
         MatchStatus status,
         long revision = 4,
         string? displayName = "Player One") => new()
-    {
-        Id = "match-1",
-        Title = "Friday match",
-        GameType = "Chess",
-        CreatedBy = "owner-1",
-        CreatedAt = CreatedAt,
-        LastActivityAt = LastActivityAt,
-        MaxPlayers = 4,
-        Status = status,
-        Revision = revision,
-        Participants =
-        [
-            new MatchParticipantDocument
-            {
-                UserId = "user-1",
-                DisplayName = displayName,
-                JoinedAt = JoinedAt,
-                LastHeartbeatAt = LastHeartbeatAt
-            }
-        ]
-    };
+        {
+            Id = "match-1",
+            Title = "Friday match",
+            GameType = "Chess",
+            CreatedBy = "owner-1",
+            CreatedAt = CreatedAt,
+            LastActivityAt = LastActivityAt,
+            MaxPlayers = 4,
+            Status = status,
+            Revision = revision,
+            Participants =
+            [
+                new MatchParticipantDocument
+                {
+                    UserId = "user-1",
+                    DisplayName = displayName,
+                    JoinedAt = JoinedAt,
+                    LastHeartbeatAt = LastHeartbeatAt
+                }
+            ]
+        };
 }
