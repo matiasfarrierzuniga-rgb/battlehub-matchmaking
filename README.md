@@ -11,48 +11,49 @@ Matchmaking administra el ciclo de vida de la sala. No guarda resultados de Typi
 
 ## Inicio rápido
 
-### Prerrequisitos
+### Requisitos
 
-- .NET 10 SDK
-- MongoDB en `mongodb://localhost:27017`
-- Dominio y audiencia de Auth0. No van en el repositorio. Se guardan en user-secrets.
-
-### Variables
-
-| Variable | Equivale a | Ejemplo local |
-|---|---|---|
-| `Auth0__Domain` | `Auth0:Domain` | `tu-tenant.us.auth0.com` |
-| `Auth0__Audience` | `Auth0:Audience` | `https://api.battlehub.local/profile` |
-| `Cors__Origins__0` | `Cors:Origins[0]` | `http://localhost:4000` |
-| `MongoDb__ConnectionString` | `MongoDb:ConnectionString` | `mongodb://localhost:27017` |
-| `MongoDb__DatabaseName` | `MongoDb:DatabaseName` | `battlehub_matchmaking` |
-
-`dotnet run` no arranca si faltan `Auth0:Domain` o `Auth0:Audience`. El script local los guarda en user-secrets del proyecto (`UserSecretsId` propio de Matchmaking, distinto al de Profile) y no los escribe en `appsettings.json`.
-
-### Arranque en el equipo
-
-MongoDB debe estar escuchando en el puerto 27017. Luego:
+Docker con Compose y un dominio Auth0 válido. La API valida JWT con el dominio y la audiencia configurados; no necesita Client Secrets. Para las pruebas locales también se necesita el SDK .NET 10 y, para cobertura, Python 3.
 
 ```powershell
-.\scripts\Start-Local.ps1 `
-  -Auth0Domain "tu-tenant.us.auth0.com" `
-  -Auth0Audience "https://api.battlehub.local/profile" `
-  -MongoConnectionString "mongodb://localhost:27017"
-```
-
-`-MongoConnectionString` tiene ese valor por defecto. El script publica la API en **http://localhost:5211**, permite el origen del Shell **http://localhost:4000** y deja el lobby en **http://localhost:5211/hubs/lobby**.
-
-Sin `-Auth0Domain` el script responde `Auth0 Domain es requerido.` Sin `-Auth0Audience`, `Auth0 Audience es requerido.` En ambos casos termina antes de `dotnet run`. No pongas Client Secrets ni tokens en el script ni en el README.
-
-### Docker
-
-Copia `.env.example` a `.env` y completa `AUTH0_DOMAIN` y `AUTH0_AUDIENCE`. No pongas Client Secrets en ese archivo.
-
-```powershell
+Copy-Item .env.example .env
+# Editar .env y completar AUTH0_DOMAIN
 docker compose up --build
 ```
 
-Compose levanta MongoDB 7 y Matchmaking. Desde el equipo, la API queda en **http://localhost:5211**.
+El comando construye y levanta MongoDB 7, el generador de datos y Matchmaking. Para detener los servicios, conservando los datos:
+
+```powershell
+docker compose down
+```
+
+Para eliminar también el volumen de este proyecto y sus datos, usar `docker compose down -v`.
+
+### Configuración
+
+Las variables están en `.env`, que no se versiona. No incluir tokens ni Client Secrets.
+
+| Variable | Valor local | Uso |
+|---|---|---|
+| `AUTH0_DOMAIN` | completar | Dominio del tenant para validar JWT |
+| `AUTH0_AUDIENCE` | `https://api.battlehub.local/profile` | Audiencia del bearer compartido |
+| `MONGO_CONNECTION_STRING` | `mongodb://mongodb:27017` | Conexión desde los contenedores |
+| `MONGO_DATABASE` | `battlehub_matchmaking` | Base usada por API y generador |
+| `MATCHMAKING_PORT` | `5211` | Puerto de la API en el host |
+| `MONGO_PORT` | `27017` | Puerto de MongoDB en el host |
+| `CORS_ORIGIN` | `http://localhost:4000` | Origen permitido del Shell |
+
+La API escucha en el puerto 8080 dentro del contenedor y MongoDB en el 27017. Con los valores predeterminados, verificar la disponibilidad desde el host con:
+
+```powershell
+curl.exe http://localhost:5211/health
+```
+
+El healthcheck de la API consulta ese endpoint desde el contenedor. MongoDB tiene su propio healthcheck; el generador espera a MongoDB y la API espera la finalización exitosa del generador.
+
+### Datos de demostración
+
+El servicio independiente `data-generator` ejecuta `docker/demo-data.js` con `mongosh` y crea en `matches` tres salas `Waiting` para `typing`, `trivia` y `memory`, cada una con su anfitrión. Sus IDs son `demo-typing`, `demo-trivia` y `demo-memory`. Son identidades ficticias, no cuentas de Auth0. El generador usa IDs fijos y `$setOnInsert`: si una sala ya existe, no la modifica ni crea duplicados. Si fue eliminada, la recrea en el siguiente arranque. Las salas están sujetas a las reglas normales de inactividad y limpieza, por lo que pueden desaparecer mientras el sistema permanece encendido. El volumen conserva los datos entre `down` y `up`.
 
 ## Direcciones locales
 
