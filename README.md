@@ -42,12 +42,16 @@ Las variables están en `.env`, que no se versiona. No incluir tokens ni Client 
 | `MATCHMAKING_PORT` | `5211` | Puerto de la API en el host |
 | `MONGO_PORT` | `27017` | Puerto de MongoDB en el host |
 | `CORS_ORIGIN` | `http://localhost:4000` | Origen permitido del Shell |
+| `CLEANUP_ENABLED` | `true` | Activa o desactiva la limpieza automática |
+| `CLEANUP_INTERVAL_SECONDS` | `30` | Frecuencia de ejecución del servicio de limpieza, en segundos |
+| `CLEANUP_HEARTBEAT_TIMEOUT_SECONDS` | `120` | Tiempo máximo sin heartbeat válido, en segundos |
+| `CLEANUP_INACTIVITY_SECONDS` | `300` | Tiempo máximo de inactividad de salas `Waiting`, en segundos |
+| `CLEANUP_EXPIRATION_SECONDS` | `7200` | Vida máxima de una sala no terminal, en segundos |
+| `CLEANUP_RETENTION_SECONDS` | `600` | Tiempo que `Finished` y `Cancelled` permanecen en la colección activa, en segundos |
 
-La API escucha en el puerto 8080 dentro del contenedor y MongoDB en el 27017. Con los valores predeterminados, verificar la disponibilidad desde el host con:
+`MatchCleanupBackgroundService` limpia salas abandonadas por falta de heartbeat, inactividad o expiración y elimina salas terminales después de la retención. Sus umbrales provienen de la configuración y se pueden modificar con estas variables de entorno.
 
-```powershell
-curl.exe http://localhost:5211/health
-```
+La API escucha en el puerto 8080 dentro del contenedor y MongoDB en el 27017.
 
 El healthcheck de la API consulta ese endpoint desde el contenedor. MongoDB tiene su propio healthcheck; el generador espera a MongoDB y la API espera la finalización exitosa del generador.
 
@@ -81,7 +85,39 @@ El hub no cambió de ruta. El cliente llama `JoinLobby`, `JoinMatch`, `LeaveMatc
 
 Solo se pueden crear salas `typing`, `trivia` y `memory` (sin distinguir mayúsculas). La capacidad es genérica y debe ser mayor que cero. El nombre visible usa el claim `name` del token cuando existe y, si falta, la identidad del usuario. Matchmaking no consulta Profile ni permisos externos. Las rutas protegidas requieren un bearer válido.
 
+Matchmaking valida únicamente el bearer JWT: firma, emisor (issuer), audiencia (audience) y vigencia (lifetime). No consulta permisos ni llama al Profile Service.
+
 Iniciar exige que el llamador sea el dueño, que la sala esté en `Waiting` y que haya al menos 2 participantes. Con un solo jugador la respuesta es **409** y la sala sigue en `Waiting`. La regla vale para cualquier juego; con 3 o más participantes se puede iniciar si la capacidad de la sala lo permite.
+
+## Ejemplos con curl
+
+En PowerShell, con los puertos predeterminados y un token de acceso válido:
+
+```powershell
+$TOKEN = "<access-token>"
+$MATCH_ID = "<match-id>"
+
+curl.exe http://localhost:5211/health
+
+curl.exe http://localhost:5211/api/matches `
+  -H "Authorization: Bearer $TOKEN"
+
+curl.exe -X POST http://localhost:5211/api/matches `
+  -H "Authorization: Bearer $TOKEN" `
+  -H "Content-Type: application/json" `
+  -d '{\"title\":\"Sala demo\",\"gameType\":\"typing\",\"maxPlayers\":2}'
+
+curl.exe -X POST "http://localhost:5211/api/matches/$MATCH_ID/join" `
+  -H "Authorization: Bearer $TOKEN"
+
+curl.exe -X POST "http://localhost:5211/api/matches/$MATCH_ID/start" `
+  -H "Authorization: Bearer $TOKEN"
+
+curl.exe -X POST "http://localhost:5211/api/matches/$MATCH_ID/finish" `
+  -H "Authorization: Bearer $TOKEN"
+```
+
+La finalización no lleva body; normalmente la llama el Shell y un juego no debe llamar directamente a Matchmaking.
 
 ## Historial de partidas
 
@@ -122,7 +158,7 @@ Authorization: Bearer $TOKEN
 
 ## Finalización desde Shell
 
-El juego notifica a Shell mediante un evento y Shell llama a Matchmaking con el bearer del usuario. Los juegos no llaman directamente a Matchmaking.
+El flujo es **Juego → evento → Shell → Matchmaking**: el Shell llama a Matchmaking con el bearer del usuario. Los juegos no llaman directamente a Matchmaking.
 
 ```http
 POST /api/matches/{matchId}/finish
