@@ -36,6 +36,12 @@ services:
       MongoDb__ConnectionString: ${MONGO_CONNECTION_STRING:-mongodb://mongodb:27017}
       MongoDb__DatabaseName: ${MONGO_DATABASE:-battlehub_matchmaking}
       Cors__Origins__0: ${CORS_ORIGIN:-http://localhost:4000}
+      Cleanup__Enabled: ${CLEANUP_ENABLED:-true}
+      Cleanup__IntervalSeconds: ${CLEANUP_INTERVAL_SECONDS:-30}
+      Cleanup__HeartbeatTimeoutSeconds: ${CLEANUP_HEARTBEAT_TIMEOUT_SECONDS:-120}
+      Cleanup__InactivitySeconds: ${CLEANUP_INACTIVITY_SECONDS:-300}
+      Cleanup__ExpirationSeconds: ${CLEANUP_EXPIRATION_SECONDS:-7200}
+      Cleanup__RetentionSeconds: ${CLEANUP_RETENTION_SECONDS:-600}
     depends_on:
       mongodb:
         condition: service_healthy
